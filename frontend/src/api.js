@@ -1,3 +1,5 @@
+import { clearAuth } from './auth'
+
 const baseURL = (window.g?.baseURL || import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 let refreshPromise = null
 
