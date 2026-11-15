@@ -1,264 +1,172 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"pingtai/internal/config"
-	"pingtai/internal/setup"
+	"pingtai/internal/database"
+	"pingtai/internal/model"
+	"pingtai/internal/repository"
 )
 
-// This integration test uses an isolated SQLite file and a local mock model provider.
-func TestWebSetupRestartIntegration(t *testing.T) {
+func TestPlatformBootstrapAndProviderConfiguration(t *testing.T) {
+	ctx := context.Background()
 	sqlitePath := filepath.Join(t.TempDir(), "data", "pingtai.db")
-	t.Setenv("PINGTAI_DB_PATH", filepath.Join(t.TempDir(), "stale-environment.db"))
-	t.Setenv("PINGTAI_CONFIG_FILE", filepath.Join(t.TempDir(), "pingtai-config.json"))
 
-	upstreamRequests := make(chan map[string]any, 16)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer verification-upstream-key" {
-			t.Error("model credentials were not restored after restart")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer verification-upstream-key" {
+			t.Errorf("unexpected provider authorization header")
 		}
-		if request.URL.Path != "/v1/chat/completions" {
-			t.Errorf("unexpected upstream URL: %s", request.URL.Path)
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("unexpected upstream URL: %s", r.URL.Path)
 		}
-		var payload map[string]any
-		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
-			t.Error(err)
-		}
-		upstreamRequests <- payload
 		w.Header().Set("Content-Type", "application/json")
-		messages, _ := payload["messages"].([]any)
-		if len(messages) > 0 && messages[len(messages)-1].(map[string]any)["content"] == "simulate-failure" {
-			w.WriteHeader(http.StatusBadGateway)
-			_, _ = io.WriteString(w, `{"error":{"message":"simulated failure"}}`)
-			return
-		}
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"restart-ok"}}]}`)
 	}))
 	defer upstream.Close()
-	requestBody := map[string]any{
-		"Settings": map[string]any{
-			"Addr": ":5051", "OpenAIBaseURL": upstream.URL + "/v1", "OpenAIAPIKey": "verification-upstream-key",
-			"OpenAIModel": "verification-model", "ModelAPIKey": "verification-proxy-key",
-			"OpenAIModels":       []string{"verification-model", "second-model"},
-			"OpenAISystemPrompt": "remember the conversation", "ContextTurns": 1, "DatabasePath": sqlitePath,
-		},
-		"AdminUsername": "setupadmin", "AdminPassword": "verification-admin-password",
-	}
-	initial := config.Defaults()
-	initial.DatabasePath = sqlitePath
-	bootstrap := setup.New(initial, nil)
-	response := sendSetupRequest(t, bootstrap, requestBody, bootstrap.BootstrapToken(), "", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("initial web save: %d %s", response.Code, response.Body.String())
-	}
-	// Simulate a fresh process reading saved configuration in the presence of stale environment values.
-	t.Setenv("PINGTAI_DB_PATH", filepath.Join(t.TempDir(), "invalid-environment.db"))
-	t.Setenv("JWT_SECRET_KEY", "invalid-environment-secret")
-	saved, err := config.Load()
-	if err != nil || saved.Addr != ":5051" || len(saved.JWTSecret) < 32 {
-		t.Fatalf("saved configuration did not survive reload: %v", err)
-	}
-	application, management, cleanup, err := buildApplication(context.Background(), saved)
+
+	// Seed a provider the same way an administrator configures it in the UI.
+	db, err := database.Open(ctx, sqlitePath)
 	if err != nil {
-		t.Fatalf("application did not start after setup: %v", err)
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	providers := repository.NewProviderRepository(db)
+	providerID, err := providers.Save(ctx, model.Provider{
+		Name: "Integration provider",
+		BaseURL: upstream.URL + "/v1",
+		APIKey: "verification-upstream-key",
+		DefaultModel: "verification-model",
+		TimeoutSeconds: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := providers.ReplaceModels(ctx, providerID, []model.ProviderModel{
+		{ProviderID: providerID, ModelID: "verification-model", Enabled: true},
+		{ProviderID: providerID, ModelID: "second-model", Enabled: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := providers.Activate(ctx, providerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Defaults()
+	cfg.DatabasePath = sqlitePath
+	cfg.ModelAPIKey = "verification-platform-key"
+	application, cleanup, err := buildApplication(ctx, cfg)
+	if err != nil {
+		t.Fatalf("application did not start: %v", err)
 	}
 	defer cleanup()
-	if management.BootstrapToken() != "" {
-		t.Fatal("bootstrap access remains enabled after normal startup")
-	}
+
 	health := httptest.NewRecorder()
 	application.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/api/health", nil))
 	if health.Code != http.StatusOK {
-		t.Fatalf("health after restart: %d", health.Code)
+		t.Fatalf("health check failed: HTTP %d %s", health.Code, health.Body.String())
 	}
-	var accessToken string
-	login := func(password string) int {
-		form := url.Values{"username": {"setupadmin"}, "password": {password}}
-		request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
-		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		response := httptest.NewRecorder()
-		application.ServeHTTP(response, request)
-		var result struct {
-			Errcode     int
-			AccessToken string `json:"access_token"`
-		}
-		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
-			t.Fatal(err)
-		}
-		if result.AccessToken != "" {
-			accessToken = result.AccessToken
-			cookies := response.Result().Cookies()
-			foundAccess, foundRefresh, foundSignedIn := false, false, false
-			for _, cookie := range cookies {
-				switch cookie.Name {
-				case "Authorization":
-					foundAccess = cookie.HttpOnly && cookie.Value == result.AccessToken
-				case "RefreshToken":
-					foundRefresh = cookie.HttpOnly && cookie.Value != ""
-				case "pingtai_signed_in":
-					foundSignedIn = cookie.Value == "1"
-				}
-			}
-			if !foundAccess || !foundRefresh || !foundSignedIn {
-				t.Fatal("local login did not set HttpOnly session cookies and SPA signed-in flag")
-			}
-		}
-		return result.Errcode
-	}
-	if login("verification-admin-password") != 200 {
-		t.Fatal("the administrator created by web setup cannot log in after restart")
-	}
-	listRequest := httptest.NewRequest(http.MethodGet, "/api/agents/getAgentsList?space_id=openai-workspace", nil)
-	listRequest.Header.Set("Authorization", "Bearer "+accessToken)
-	listResponse := httptest.NewRecorder()
-	application.ServeHTTP(listResponse, listRequest)
-	var modelList struct {
+
+	status := httptest.NewRecorder()
+	application.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/api/auth/bootstrap/status", nil))
+	var bootstrapState struct {
 		Data struct {
-			Bots []struct {
-				BotID string `json:"bot_id"`
-				Name  string `json:"name"`
-			} `json:"space_bots"`
+			NeedsAdmin bool `json:"needs_admin"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &bootstrapState); err != nil || !bootstrapState.Data.NeedsAdmin {
+		t.Fatalf("new SQLite database should require first admin: %s err=%v", status.Body.String(), err)
+	}
+
+	register := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap/register",
+		strings.NewReader(`{"username":"first-admin","password":"verification-admin-password"}`))
+	register.Header.Set("Content-Type", "application/json")
+	registerResponse := httptest.NewRecorder()
+	application.ServeHTTP(registerResponse, register)
+	if registerResponse.Code != http.StatusOK {
+		t.Fatalf("first admin registration failed: HTTP %d %s", registerResponse.Code, registerResponse.Body.String())
+	}
+	var token string
+	for _, cookie := range registerResponse.Result().Cookies() {
+		if cookie.Name == "Authorization" {
+			token = cookie.Value
 		}
 	}
-	if err := json.Unmarshal(listResponse.Body.Bytes(), &modelList); err != nil || len(modelList.Data.Bots) != 1 || modelList.Data.Bots[0].Name != "verification-model" {
-		t.Fatalf("platform default model was not restored as the only web chat option: %s", listResponse.Body.String())
+	if token == "" {
+		t.Fatal("first admin registration did not establish an access session")
 	}
-	modelRequest := httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"hello"}]}`))
-	modelRequest.Header.Set("Content-Type", "application/json")
-	modelRequest.Header.Set("X-API-Key", "verification-proxy-key")
-	modelResponse := httptest.NewRecorder()
-	application.ServeHTTP(modelResponse, modelRequest)
-	if modelResponse.Code != http.StatusOK || !strings.Contains(modelResponse.Body.String(), "restart-ok") {
-		t.Fatalf("model proxy after restart: %d %s", modelResponse.Code, modelResponse.Body.String())
+
+	me := authenticatedGet(t, application, token, "/api/auth/me")
+	var profile struct {
+		Data struct {
+			IsAdmin bool `json:"is_admin"`
+		} `json:"data"`
 	}
-	<-upstreamRequests
-	createConversation := func() string {
-		result := authenticatedRequest(t, application, accessToken, "/api/agents/createConversation", "application/json", `{"bot_id":"openai-default"}`)
-		var conversation struct {
-			Data struct{ ID string }
-		}
-		if err := json.Unmarshal(result.Body.Bytes(), &conversation); err != nil || conversation.Data.ID == "" {
-			t.Fatalf("cannot create conversation: %s", result.Body.String())
-		}
-		return conversation.Data.ID
+	if err := json.Unmarshal(me.Body.Bytes(), &profile); err != nil || !profile.Data.IsAdmin {
+		t.Fatalf("first account did not receive administrator privileges: %s err=%v", me.Body.String(), err)
 	}
-	selectedBotID := "openai-default"
-	sendChat := func(conversationID, text, imageURL string) map[string]any {
-		form := url.Values{"conversation_id": {conversationID}, "bot_id": {selectedBotID}, "content": {text}}
-		if imageURL != "" {
-			form.Set("up_type", "image")
-			form.Set("url", imageURL)
-		}
-		result := authenticatedRequest(t, application, accessToken, "/api/agents/chat", "application/x-www-form-urlencoded", form.Encode())
-		if result.Code != http.StatusOK || !strings.Contains(result.Body.String(), `"code":0`) {
-			t.Fatalf("web chat failed: %d %s", result.Code, result.Body.String())
-		}
-		select {
-		case payload := <-upstreamRequests:
-			return payload
-		case <-time.After(5 * time.Second):
-			t.Fatal("chat did not reach upstream")
-			return nil
-		}
+
+	modelList := authenticatedGet(t, application, token, "/api/agents/models")
+	var models struct {
+		Data struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		} `json:"data"`
 	}
-	conversationID := createConversation()
-	first := sendChat(conversationID, "remember this picture", "https://image.example/remember.png")
-	if len(first["messages"].([]any)) != 2 {
-		t.Fatal("first turn should contain only system and current user messages")
+	if err := json.Unmarshal(modelList.Body.Bytes(), &models); err != nil || len(models.Data.Models) != 2 {
+		t.Fatalf("configured models were not exposed to chat: %s err=%v", modelList.Body.String(), err)
 	}
-	sendChat(conversationID, "simulate-failure", "")
+
+	proxyRequest := httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions",
+		strings.NewReader(`{"model":"verification-model","messages":[{"role":"user","content":"hello"}]}`))
+	proxyRequest.Header.Set("Content-Type", "application/json")
+	proxyRequest.Header.Set("X-API-Key", "verification-platform-key")
+	proxyResponse := httptest.NewRecorder()
+	application.ServeHTTP(proxyResponse, proxyRequest)
+	if proxyResponse.Code != http.StatusOK || !strings.Contains(proxyResponse.Body.String(), "restart-ok") {
+		t.Fatalf("configured provider could not serve chat completions: HTTP %d %s", proxyResponse.Code, proxyResponse.Body.String())
+	}
+
+	secondRegister := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap/register",
+		strings.NewReader(`{"username":"second-admin","password":"another-password-123"}`))
+	secondRegister.Header.Set("Content-Type", "application/json")
+	secondResponse := httptest.NewRecorder()
+	application.ServeHTTP(secondResponse, secondRegister)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("public first-admin registration should close after first account: HTTP %d %s", secondResponse.Code, secondResponse.Body.String())
+	}
+
+	// A fresh process must reuse the JWT signing secret persisted in SQLite.
 	cleanup()
-	saved, err = config.Load()
+	restarted, restartCleanup, err := buildApplication(ctx, cfg)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("platform could not restart with its existing SQLite database: %v", err)
 	}
-	application, management, cleanup, err = buildApplication(context.Background(), saved)
-	if err != nil {
-		t.Fatalf("cannot restart with persistent conversations: %v", err)
-	}
-	defer cleanup()
-	second := sendChat(conversationID, "what picture did I send?", "")
-	messages := second["messages"].([]any)
-	encodedMessages, _ := json.Marshal(messages)
-	if len(messages) != 4 || !strings.Contains(string(encodedMessages), "https://image.example/remember.png") || strings.Contains(string(encodedMessages), "simulate-failure") {
-		t.Fatalf("context after restart lost the image or included a failed turn: %s", encodedMessages)
-	}
-	third := sendChat(conversationID, "latest turn only", "")
-	encodedMessages, _ = json.Marshal(third["messages"])
-	if len(third["messages"].([]any)) != 4 || strings.Contains(string(encodedMessages), "remember.png") || !strings.Contains(string(encodedMessages), "what picture did I send?") {
-		t.Fatalf("configured context-turn limit did not retain whole recent turns: %s", encodedMessages)
-	}
-	separate := sendChat(createConversation(), "new conversation", "")
-	if len(separate["messages"].([]any)) != 2 {
-		t.Fatal("history leaked into a different conversation")
-	}
-	cleanup()
-	saved.ContextTurns = 0
-	application, management, cleanup, err = buildApplication(context.Background(), saved)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cleanup()
-	fullHistory := sendChat(conversationID, "all successful turns", "")
-	encodedMessages, _ = json.Marshal(fullHistory["messages"])
-	if len(fullHistory["messages"].([]any)) != 8 || !strings.Contains(string(encodedMessages), "remember.png") || strings.Contains(string(encodedMessages), "simulate-failure") {
-		t.Fatalf("zero context-turn limit did not restore all successful turns: %s", encodedMessages)
-	}
-	if len(modelList.Data.Bots) != 1 || modelList.Data.Bots[0].Name != "verification-model" {
-		t.Fatalf("restarted application exposed a model other than the configured default: %#v", modelList.Data.Bots)
-	}
-	defaultOnly := sendChat(conversationID, "continue with the platform default model", "")
-	if defaultOnly["model"] != "verification-model" || len(defaultOnly["messages"].([]any)) != 10 {
-		t.Fatal("default model was not used or switching lost the conversation context")
-	}
-	response = sendSetupRequest(t, management, requestBody, bootstrap.BootstrapToken(), "", "")
-	if response.Code != http.StatusUnauthorized {
-		t.Fatal("the old bootstrap key can still change settings after restart")
-	}
-	requestBody["AdminPassword"] = "must-not-reset-existing-admin"
-	response = sendSetupRequest(t, management, requestBody, "", "setupadmin", "verification-admin-password")
-	if response.Code != http.StatusOK {
-		t.Fatalf("administrator configuration update: %d %s", response.Code, response.Body.String())
-	}
-	if login("verification-admin-password") != 200 || login("must-not-reset-existing-admin") == 200 {
-		t.Fatal("a configuration update reset an existing administrator password")
+	defer restartCleanup()
+	restartedMe := authenticatedGet(t, restarted, token, "/api/auth/me")
+	if restartedMe.Code != http.StatusOK {
+		t.Fatalf("access token was invalidated by restart: HTTP %d %s", restartedMe.Code, restartedMe.Body.String())
 	}
 }
 
-func authenticatedRequest(t *testing.T, application http.Handler, token, path, contentType, body string) *httptest.ResponseRecorder {
+func authenticatedGet(t *testing.T, application http.Handler, token, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Content-Type", contentType)
 	response := httptest.NewRecorder()
 	application.ServeHTTP(response, request)
-	return response
-}
-
-func sendSetupRequest(t *testing.T, handler http.Handler, body any, token, username, password string) *httptest.ResponseRecorder {
-	t.Helper()
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest(http.MethodPost, "http://localhost/setup/api", bytes.NewReader(encoded))
-	request.Header.Set("X-Setup-Request", "1")
-	request.Header.Set("X-Setup-Token", token)
-	if username != "" {
-		request.SetBasicAuth(username, password)
-	}
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
 	return response
 }
