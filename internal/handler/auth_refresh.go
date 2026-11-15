@@ -17,7 +17,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if h.Config.SSOConfigured() {
 		providerCookie, cookieErr := r.Cookie("SSORefreshToken")
 		if cookieErr != nil {
-			clearAuthCookies(w, h.ssoSecure())
+			clearAuthCookies(w, h.requestSecure(r))
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "学校统一身份认证已过期，请重新登录"})
 			return
 		}
@@ -25,7 +25,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		providerToken, refreshErr := sso.NewClient(*h.Config).RefreshToken(ctx, providerCookie.Value)
 		cancel()
 		if refreshErr != nil {
-			clearAuthCookies(w, h.ssoSecure())
+			clearAuthCookies(w, h.requestSecure(r))
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "学校统一身份认证已过期，请重新登录"})
 			return
 		}
@@ -37,7 +37,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 			http.SetCookie(w, &http.Cookie{
 				Name: "SSORefreshToken", Value: providerToken.RefreshToken, Path: "/",
 				Expires: time.Now().Add(refreshTTL), MaxAge: int(refreshTTL.Seconds()),
-				HttpOnly: true, Secure: h.ssoSecure(), SameSite: http.SameSiteLaxMode,
+				HttpOnly: true, Secure: h.requestSecure(r), SameSite: http.SameSiteLaxMode,
 			})
 		}
 	}
@@ -53,7 +53,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name: "Authorization", Value: token, Path: "/",
 		Expires: time.Now().Add(accessTTL), MaxAge: int(accessTTL.Seconds()),
-		HttpOnly: true, Secure: h.ssoSecure(), SameSite: http.SameSiteLaxMode,
+		HttpOnly: true, Secure: h.requestSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": token, "errcode": 200, "errmsg": "success"})
 }

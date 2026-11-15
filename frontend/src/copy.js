@@ -1,7 +1,11 @@
 export const copy = Object.freeze({
   appName: 'AI \u80FD\u529B\u5E73\u53F0',
   loginTitle: '\u6B22\u8FCE\u767B\u5F55 AI \u80FD\u529B\u5E73\u53F0',
-  loginSubtitle: "请使用学校统一身份认证登录",
+  loginSubtitle: "请使用管理员分配的平台账号和密码登录",
+  localLoginFooter: "账号由平台管理员创建和管理",
+  loginModeUnavailable: "暂时无法读取登录配置，请稍后重试。",
+  credentialsRequired: "请输入账号和密码。",
+  loginFailed: "登录失败，请检查账号和密码。",
   ssoLogin: "学校统一身份认证登录",
   ssoLoginHint: "使用漳州城市职业学院统一身份认证账号登录",
   ssoLoginFooter: "统一身份认证账号由学校统一管理",

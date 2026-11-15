@@ -31,6 +31,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 		})
 	})
 
+	api.HandleFunc("GET /auth/mode", h.AuthMode)
 	if !cfg.SSOConfigured() {
 		api.HandleFunc("POST /auth/login", h.Login)
 	}

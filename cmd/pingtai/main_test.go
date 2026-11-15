@@ -98,6 +98,21 @@ func TestWebSetupRestartIntegration(t *testing.T) {
 		}
 		if result.AccessToken != "" {
 			accessToken = result.AccessToken
+			cookies := response.Result().Cookies()
+			foundAccess, foundRefresh, foundSignedIn := false, false, false
+			for _, cookie := range cookies {
+				switch cookie.Name {
+				case "Authorization":
+					foundAccess = cookie.HttpOnly && cookie.Value == result.AccessToken
+				case "RefreshToken":
+					foundRefresh = cookie.HttpOnly && cookie.Value != ""
+				case "pingtai_signed_in":
+					foundSignedIn = cookie.Value == "1"
+				}
+			}
+			if !foundAccess || !foundRefresh || !foundSignedIn {
+				t.Fatal("local login did not set HttpOnly session cookies and SPA signed-in flag")
+			}
 		}
 		return result.Errcode
 	}

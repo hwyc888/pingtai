@@ -4,7 +4,7 @@
 
 The editable frontend source is a Vue 3 application in frontend/. The built HTML, JavaScript, CSS and images are embedded into both Go executables with the Go embed feature. The release does not need Node.js or a separate web server at runtime. Building from source requires Node.js 20.19 or newer and npm.
 
-Run .\build.ps1 in the project root. It:
+On Windows, run `build.ps1`. On Ubuntu/Linux, run `./build-linux.sh`. Both scripts build the Vue frontend, embed it in the Go executable, run Go tests and vet, and create a Linux release package. The Windows build also creates the Windows executable.
 
 1. Installs frontend dependencies and runs the Vite production build in frontend/.
 2. Copies frontend/dist/ into the Go embed source at internal/httpapi/web/.
@@ -40,6 +40,9 @@ The console window is only for service logs and shutdown, not configuration. To 
 The EXE serves the embedded frontend directly. No frontend/ folder is required.
 
 ## Linux deployment
+
+To build from source on Ubuntu 22.04/24.04, install Go 1.26+, Node.js 20.19+ and npm, then run `chmod +x build-linux.sh && ./build-linux.sh`. The script produces `dist/pingtai-linux-amd64` and, when `zip` is installed, `dist/pingtai-linux-amd64-release.zip`.
+
 
 Extract the ZIP on a Linux AMD64 host, then run:
 

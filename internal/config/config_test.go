@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -39,5 +40,14 @@ func TestAuthModeRequiresCompleteSSOSettings(t *testing.T) {
 	cfg.AuthMode = "local"
 	if cfg.SSOConfigured() {
 		t.Fatal("SSO credentials alone must not switch the active auth mode")
+	}
+}
+
+func TestLoadRejectsLegacyMySQLEnvironmentUntilMigrated(t *testing.T) {
+	t.Setenv("PINGTAI_CONFIG_FILE", filepath.Join(t.TempDir(), "missing-config.json"))
+	t.Setenv("MYSQL_DSN", "legacy-user:legacy-pass@tcp(localhost:3306)/legacy")
+	t.Setenv("DATABASE_URL", "")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "legacy MySQL connection settings detected") {
+		t.Fatalf("expected explicit legacy database migration warning, got %v", err)
 	}
 }

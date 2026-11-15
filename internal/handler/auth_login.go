@@ -33,6 +33,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"errcode": 500, "errmsg": "生成登录令牌失败"})
 		return
 	}
+	secure := h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, "", secure)
 	bindWX := 0
 	if user.OpenID != "" {
 		bindWX = 1

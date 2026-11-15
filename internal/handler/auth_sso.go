@@ -96,7 +96,7 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
 	}
-	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken)
+	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken, h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https"))
 	http.Redirect(w, r, returnTo, http.StatusSeeOther)
 }
 
@@ -115,9 +115,25 @@ func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"account": identity.Username,
 			"display_name": displayName,
-			"is_admin": h.Config.IsSSOAdmin(identity.Username),
+			"is_admin": h.isAdministrator(r, identity.Username),
 		},
 	})
+}
+
+
+func (h *Handler) isAdministrator(r *http.Request, account string) bool {
+	if h.Config.SSOConfigured() {
+		return h.Config.IsSSOAdmin(account)
+	}
+	if h.Users == nil {
+		return false
+	}
+	user, err := h.Users.FindByUsername(r.Context(), account)
+	return err == nil && user.UserType == 1 && user.Status == 1 && user.DelTag == 0
+}
+
+func (h *Handler) requestSecure(r *http.Request) bool {
+	return h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func (h *Handler) ssoSecure() bool {
@@ -125,8 +141,7 @@ func (h *Handler) ssoSecure() bool {
 	return err == nil && strings.EqualFold(redirect.Scheme, "https")
 }
 
-func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken, providerRefreshToken string) {
-	secure := h.ssoSecure()
+func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken, providerRefreshToken string, secure bool) {
 	now := time.Now()
 	accessTTL := h.Config.AccessTokenTTL
 	if accessTTL <= 0 {

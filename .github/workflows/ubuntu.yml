@@ -1,0 +1,59 @@
+name: Ubuntu CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: true
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build Vue frontend
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+          npm run build
+      - name: Embed frontend
+        run: |
+          rm -rf internal/httpapi/web
+          mkdir -p internal/httpapi/web
+          cp -a frontend/dist/. internal/httpapi/web/
+      - name: Go module tidy
+        run: go mod tidy
+      - name: Go tests
+        run: go test ./...
+      - name: Go vet
+        run: go vet ./...
+      - name: Build Ubuntu AMD64
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/pingtai-linux-amd64 ./cmd/pingtai
+      - name: Package Ubuntu release
+        run: |
+          mkdir -p dist/deploy
+          cp .env.example README_GO.md manage-go.sh dist/
+          cp deploy/* dist/deploy/
+          chmod +x dist/pingtai-linux-amd64 dist/manage-go.sh
+          cd dist
+          zip -qr pingtai-linux-amd64-release.zip pingtai-linux-amd64 .env.example README_GO.md manage-go.sh deploy
+      - name: Upload Ubuntu release
+        uses: actions/upload-artifact@v4
+        with:
+          name: pingtai-ubuntu-amd64
+          path: dist/pingtai-linux-amd64-release.zip
+          if-no-files-found: error

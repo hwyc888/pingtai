@@ -13,7 +13,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 			h.Auth.Tokens().Revoke(claims.JTI, claims.Expires)
 		}
 	}
-	clearAuthCookies(w, h.ssoSecure())
+	clearAuthCookies(w, h.requestSecure(r))
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]any{"code": 200, "msg": "退出登录成功"})
 }

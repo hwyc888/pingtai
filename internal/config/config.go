@@ -60,6 +60,9 @@ func Load() (Config, error) {
 		return saved, err
 	}
 	loadConfigDotEnv()
+	if strings.TrimSpace(os.Getenv("MYSQL_DSN")) != "" || strings.TrimSpace(os.Getenv("DATABASE_URL")) != "" {
+		return Config{}, errors.New("legacy MySQL connection settings detected; export and migrate existing data to SQLite before removing MYSQL_DSN or DATABASE_URL")
+	}
 
 
 	workspaceID := env("COZE_WORKSPACE_ID", "7481824441182617636")
