@@ -163,3 +163,8 @@ Do not commit or share .env or pingtai-config.json. They contain database creden
 # Vue/Vite build output
 frontend/dist/
 frontend/.vite/
+
+# Local runtime SQLite data and saved credentials
+/data/
+/pingtai-config.json
+/.env
