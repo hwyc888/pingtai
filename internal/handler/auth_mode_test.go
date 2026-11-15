@@ -30,7 +30,8 @@ func TestAuthModeReportsConfiguredMode(t *testing.T) {
 			app := &Handler{Config: &cfg}
 			response := httptest.NewRecorder()
 			app.AuthMode(response, httptest.NewRequest(http.MethodGet, "/auth/mode", nil))
-			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), ""mode":""+test.want+""") {
+			expected := "\"mode\":\"" + test.want + "\""
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), expected) {
 				t.Fatalf("unexpected auth mode response: %d %s", response.Code, response.Body.String())
 			}
 		})
