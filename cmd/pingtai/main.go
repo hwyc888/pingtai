@@ -160,6 +160,9 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		cfg.OpenAIModels = make([]string, 0, len(models))
 		for _, item := range models {
 			cfg.OpenAIModels = append(cfg.OpenAIModels, item.ModelID)
+			if item.ModelID == active.DefaultModel && cfg.OpenAIMaxTokens == 0 && item.MaxOutputTokens != nil {
+				cfg.OpenAIMaxTokens = int(*item.MaxOutputTokens)
+			}
 		}
 	} else if !errors.Is(providerErr, sql.ErrNoRows) {
 		cleanup()

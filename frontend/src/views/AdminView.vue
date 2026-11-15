@@ -42,6 +42,10 @@ function assertProviderResponse(result) {
   return result
 }
 
+function openSetup() {
+  window.location.assign('/setup')
+}
+
 async function load() {
   loading.value = true
   errorMessage.value = ''
@@ -278,6 +282,7 @@ onMounted(load)
         <p class="admin-subtitle">管理员配置 AI 供应商、模型和用户账号；客户端无需选择模型。</p>
       </div>
       <div class="admin-header-actions">
+        <button class="admin-secondary" type="button" @click="openSetup">认证与系统设置</button>
         <button class="admin-secondary" type="button" @click="router.push('/IntelligentAI')">返回对话</button>
       </div>
     </header>
