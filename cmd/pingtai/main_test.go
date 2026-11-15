@@ -215,10 +215,12 @@ func TestWebSetupRestartIntegration(t *testing.T) {
 	if len(fullHistory["messages"].([]any)) != 8 || !strings.Contains(string(encodedMessages), "remember.png") || strings.Contains(string(encodedMessages), "simulate-failure") {
 		t.Fatalf("zero context-turn limit did not restore all successful turns: %s", encodedMessages)
 	}
-	selectedBotID = modelList.Data.Bots[1].BotID
-	switched := sendChat(conversationID, "switch to the second model", "")
-	if switched["model"] != "second-model" || len(switched["messages"].([]any)) != 10 {
-		t.Fatal("selected model was ignored or switching lost the conversation context")
+	if len(modelList.Data.Bots) != 1 || modelList.Data.Bots[0].Name != "verification-model" {
+		t.Fatalf("restarted application exposed a model other than the configured default: %#v", modelList.Data.Bots)
+	}
+	defaultOnly := sendChat(conversationID, "continue with the platform default model", "")
+	if defaultOnly["model"] != "verification-model" || len(defaultOnly["messages"].([]any)) != 10 {
+		t.Fatal("default model was not used or switching lost the conversation context")
 	}
 	response = sendSetupRequest(t, management, requestBody, bootstrap.BootstrapToken(), "", "")
 	if response.Code != http.StatusUnauthorized {
