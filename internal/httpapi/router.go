@@ -31,18 +31,31 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 		})
 	})
 
-	api.HandleFunc("POST /auth/login", h.Login)
+	if !cfg.SSOConfigured() {
+		api.HandleFunc("POST /auth/login", h.Login)
+	}
+	api.HandleFunc("GET /auth/sso/login", h.SSOLogin)
+	api.HandleFunc("GET /auth/sso/callback", h.SSOCallback)
+	api.Handle("GET /auth/me", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CurrentUser)))
 	api.Handle("POST /auth/refresh", middleware.RequireRefresh(h.Auth.Tokens(), http.HandlerFunc(h.Refresh)))
-	api.Handle("GET /auth/logout", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.Logout)))
-	api.Handle("POST /auth/addUser", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.AddUser)))
-	api.Handle("POST /auth/delUser", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.DeleteUser)))
-	api.Handle("GET /auth/get_user_list", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.GetUserList)))
-	api.Handle("POST /auth/editUser", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.EditUser)))
+	api.HandleFunc("GET /auth/logout", h.Logout)
+	api.HandleFunc("POST /auth/logout", h.Logout)
 
-	api.Handle("GET /agents/getAgentConfig", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.GetAgentConfig)))
-	api.Handle("POST /agents/updateAgent", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.UpdateAgent)))
-	api.Handle("POST /agents/publishAgent", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.PublishAgent)))
-	api.Handle("GET /agents/getAgentsList", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.GetAgentsList)))
+	admin := func(next http.Handler) http.Handler {
+		if cfg.SSOConfigured() {
+			return middleware.RequireAdminAccounts(h.Auth.Tokens(), cfg.SSOAdminAccounts, next)
+		}
+		return middleware.RequireAdmin(h.Auth.Tokens(), h.Users, next)
+	}
+	api.Handle("POST /auth/addUser", admin(http.HandlerFunc(h.AddUser)))
+	api.Handle("POST /auth/delUser", admin(http.HandlerFunc(h.DeleteUser)))
+	api.Handle("GET /auth/get_user_list", admin(http.HandlerFunc(h.GetUserList)))
+	api.Handle("POST /auth/editUser", admin(http.HandlerFunc(h.EditUser)))
+
+	api.Handle("GET /agents/getAgentConfig", admin(http.HandlerFunc(h.GetAgentConfig)))
+	api.Handle("POST /agents/updateAgent", admin(http.HandlerFunc(h.UpdateAgent)))
+	api.Handle("POST /agents/publishAgent", admin(http.HandlerFunc(h.PublishAgent)))
+	api.Handle("GET /agents/getAgentsList", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetAgentsList)))
 	api.Handle("POST /agents/createConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CreateConversation)))
 	api.Handle("GET /agents/getConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetConversation)))
 	api.Handle("POST /agents/chat", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.Chat)))
@@ -52,16 +65,16 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("POST /agents/getMessageList", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetMessageList)))
 	api.Handle("GET /agents/getMessage", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetMessage)))
 
-	api.Handle("GET /datasets/workspacesList", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.WorkspacesList)))
-	api.Handle("POST /datasets/createKnowledge", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.CreateKnowledge)))
-	api.Handle("GET /datasets/knowledgeList", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.KnowledgeList)))
-	api.Handle("POST /datasets/delKnowledge", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.DeleteKnowledge)))
-	api.Handle("POST /datasets/editKnowledge", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.EditKnowledge)))
-	api.Handle("POST /datasets/knowledgeFileList", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.KnowledgeFileList)))
-	api.Handle("POST /datasets/createKnowledgeFile", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.CreateKnowledgeFile)))
-	api.Handle("POST /datasets/deleteKnowledgeFile", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.DeleteKnowledgeFile)))
-	api.Handle("POST /datasets/getKnowledgeFileProcess", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.GetKnowledgeFileProcess)))
-	api.Handle("POST /datasets/updateKnowledgeFile", middleware.RequireAdmin(h.Auth.Tokens(), h.Users, http.HandlerFunc(h.UpdateKnowledgeFile)))
+	api.Handle("GET /datasets/workspacesList", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.WorkspacesList)))
+	api.Handle("POST /datasets/createKnowledge", admin(http.HandlerFunc(h.CreateKnowledge)))
+	api.Handle("GET /datasets/knowledgeList", admin(http.HandlerFunc(h.KnowledgeList)))
+	api.Handle("POST /datasets/delKnowledge", admin(http.HandlerFunc(h.DeleteKnowledge)))
+	api.Handle("POST /datasets/editKnowledge", admin(http.HandlerFunc(h.EditKnowledge)))
+	api.Handle("POST /datasets/knowledgeFileList", admin(http.HandlerFunc(h.KnowledgeFileList)))
+	api.Handle("POST /datasets/createKnowledgeFile", admin(http.HandlerFunc(h.CreateKnowledgeFile)))
+	api.Handle("POST /datasets/deleteKnowledgeFile", admin(http.HandlerFunc(h.DeleteKnowledgeFile)))
+	api.Handle("POST /datasets/getKnowledgeFileProcess", admin(http.HandlerFunc(h.GetKnowledgeFileProcess)))
+	api.Handle("POST /datasets/updateKnowledgeFile", admin(http.HandlerFunc(h.UpdateKnowledgeFile)))
 
 	modelAPI := middleware.RequireAPIOrAccess(h.Auth.Tokens(), cfg.ModelAPIKey, http.HandlerFunc(h.ChatCompletions))
 	api.Handle("POST /v1/chat/completions", modelAPI)

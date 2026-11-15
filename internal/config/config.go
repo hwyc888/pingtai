@@ -12,6 +12,11 @@ import (
 
 type Config struct {
 	Addr               string
+	SSOBaseURL         string
+	SSOClientID        string
+	SSOClientSecret    string
+	SSORedirectURL     string
+	SSOAdminAccounts   string
 	DBDSN              string
 	JWTSecret          string
 	WebDir             string
@@ -84,6 +89,11 @@ func Load() (Config, error) {
 
 	return Config{
 		Addr:               env("HTTP_ADDR", ":5050"),
+		SSOBaseURL:         strings.TrimRight(env("SSO_BASE_URL", "https://ids.zcvc.cn/cas"), "/"),
+		SSOClientID:        strings.TrimSpace(os.Getenv("SSO_CLIENT_ID")),
+		SSOClientSecret:    strings.TrimSpace(os.Getenv("SSO_CLIENT_SECRET")),
+		SSORedirectURL:     strings.TrimSpace(os.Getenv("SSO_REDIRECT_URL")),
+		SSOAdminAccounts:   strings.TrimSpace(os.Getenv("SSO_ADMIN_ACCOUNTS")),
 		DBDSN:              dsn,
 		JWTSecret:          strings.TrimSpace(os.Getenv("JWT_SECRET_KEY")),
 		WebDir:             strings.TrimSpace(os.Getenv("WEB_DIR")),
@@ -126,6 +136,21 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if c.DBDSN == "" {
 		return errors.New("MYSQL_DSN or DATABASE_URL is required")
+	}
+	if c.SSOConfigured() {
+		base, err := url.Parse(c.SSOBaseURL)
+		if err != nil || base.Hostname() == "" || (base.Scheme != "https" && base.Scheme != "http") {
+			return errors.New("SSO_BASE_URL must be a valid HTTP or HTTPS URL")
+		}
+		redirect, err := url.Parse(c.SSORedirectURL)
+		if err != nil || redirect.Hostname() == "" || (redirect.Scheme != "https" && redirect.Scheme != "http") {
+			return errors.New("SSO_REDIRECT_URL must be a valid HTTP or HTTPS URL")
+		}
+		if strings.TrimSpace(c.SSOAdminAccounts) == "" {
+			return errors.New("SSO_ADMIN_ACCOUNTS must contain at least one administrator account")
+		}
+	} else if c.SSOClientID != "" || c.SSOClientSecret != "" || c.SSORedirectURL != "" {
+		return errors.New("SSO_CLIENT_ID, SSO_CLIENT_SECRET and SSO_REDIRECT_URL must be configured together")
 	}
 	if c.JWTSecret == "" {
 		return errors.New("JWT_SECRET_KEY is required")
@@ -181,6 +206,28 @@ func (c Config) WebModels() []string {
 		return []string{c.OpenAIModel}
 	}
 	return nil
+}
+
+
+func (c Config) SSOConfigured() bool {
+	return strings.TrimSpace(c.SSOClientID) != "" &&
+		strings.TrimSpace(c.SSOClientSecret) != "" &&
+		strings.TrimSpace(c.SSORedirectURL) != ""
+}
+
+func (c Config) IsSSOAdmin(account string) bool {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return false
+	}
+	for _, allowed := range strings.FieldsFunc(c.SSOAdminAccounts, func(character rune) bool {
+		return character == ',' || character == ';' || character == '\n' || character == '\r'
+	}) {
+		if strings.EqualFold(strings.TrimSpace(allowed), account) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c Config) UsesLocalConversations() bool {

@@ -136,14 +136,16 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		cleanup()
 		return nil, nil, nil, errors.New("database table initialization failed; check account privileges in /setup")
 	}
-	var admins int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_user WHERE usertype=1 AND status=1 AND COALESCE(deltag,0)=0").Scan(&admins); err != nil {
-		cleanup()
-		return nil, nil, nil, errors.New("cannot read administrator records")
-	}
-	if admins == 0 {
-		cleanup()
-		return nil, nil, nil, errors.New("create the first administrator in web setup")
+	if !cfg.SSOConfigured() {
+		var admins int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_user WHERE usertype=1 AND status=1 AND COALESCE(deltag,0)=0").Scan(&admins); err != nil {
+			cleanup()
+			return nil, nil, nil, errors.New("cannot read administrator records")
+		}
+		if admins == 0 {
+			cleanup()
+			return nil, nil, nil, errors.New("create the first administrator in web setup")
+		}
 	}
 	users := repository.NewUserRepository(db)
 	chats := repository.NewChatRepository(db)

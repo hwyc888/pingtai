@@ -14,8 +14,9 @@ import (
 type identityKey struct{}
 
 type Identity struct {
-	Username string
-	JTI      string
+	Username    string
+	DisplayName string
+	JTI         string
 	Expires  int64
 	APIKey   bool
 }
@@ -49,6 +50,33 @@ func RequireAdmin(tokens *authservice.TokenManager, users *repository.UserReposi
 	}))
 }
 
+
+func RequireAdminAccounts(tokens *authservice.TokenManager, accounts string, next http.Handler) http.Handler {
+	return RequireAccess(tokens, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity, ok := IdentityFromContext(r.Context())
+		if !ok || !isAllowedAdmin(accounts, identity.Username) {
+			writeAuthError(w, http.StatusForbidden, "权限受限，非管理员用户")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
+func isAllowedAdmin(accounts, username string) bool {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false
+	}
+	for _, account := range strings.FieldsFunc(accounts, func(character rune) bool {
+		return character == ',' || character == ';' || character == '\n' || character == '\r'
+	}) {
+		if strings.EqualFold(strings.TrimSpace(account), username) {
+			return true
+		}
+	}
+	return false
+}
+
 func RequireAPIOrAccess(tokens *authservice.TokenManager, apiKey string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if apiKey != "" {
@@ -71,7 +99,7 @@ func RequireAPIOrAccess(tokens *authservice.TokenManager, apiKey string, next ht
 			}})
 			return
 		}
-		identity := Identity{Username: claims.Subject, JTI: claims.JTI, Expires: claims.Expires}
+		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, JTI: claims.JTI, Expires: claims.Expires}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, identity)))
 	})
 }
@@ -79,6 +107,15 @@ func RequireAPIOrAccess(tokens *authservice.TokenManager, apiKey string, next ht
 func requireToken(tokens *authservice.TokenManager, expectedType string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := bearerToken(r.Header.Get("Authorization"))
+		if token == "" {
+			cookieName := "Authorization"
+			if expectedType == "refresh" {
+				cookieName = "RefreshToken"
+			}
+			if cookie, err := r.Cookie(cookieName); err == nil {
+				token = cookie.Value
+			}
+		}
 		if token == "" {
 			writeAuthError(w, http.StatusUnauthorized, "Missing Authorization Header")
 			return
@@ -88,7 +125,7 @@ func requireToken(tokens *authservice.TokenManager, expectedType string, next ht
 			writeAuthError(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
-		identity := Identity{Username: claims.Subject, JTI: claims.JTI, Expires: claims.Expires}
+		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, JTI: claims.JTI, Expires: claims.Expires}
 		ctx := context.WithValue(r.Context(), identityKey{}, identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
