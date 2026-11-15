@@ -84,4 +84,3 @@ func TestProviderRepositoryCanAddManualModelWithoutDiscovery(t *testing.T) {
 		t.Fatalf("disabled manual model should not be active: models=%#v err=%v", models, err)
 	}
 }
-}
