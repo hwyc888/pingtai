@@ -8,6 +8,7 @@ const router = createRouter({
     { path: '/login', name: 'login', component: () => import('./views/LoginView.vue') },
     { path: '/IntelligentAI', name: 'chat', component: () => import('./views/ChatView.vue') },
     { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue') },
+    { path: '/knowledge', name: 'knowledge', component: () => import('./views/KnowledgeView.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
 })

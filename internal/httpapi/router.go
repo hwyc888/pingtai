@@ -76,6 +76,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("GET /agents/getMessage", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetMessage)))
 
 	api.Handle("GET /datasets/workspacesList", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.WorkspacesList)))
+	api.Handle("GET /datasets/status", admin(http.HandlerFunc(h.KnowledgeStatus)))
 	api.Handle("POST /datasets/createKnowledge", admin(http.HandlerFunc(h.CreateKnowledge)))
 	api.Handle("GET /datasets/knowledgeList", admin(http.HandlerFunc(h.KnowledgeList)))
 	api.Handle("POST /datasets/delKnowledge", admin(http.HandlerFunc(h.DeleteKnowledge)))

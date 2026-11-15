@@ -202,6 +202,7 @@ async function sendMessage(text = draft.value, options = {}) {
     const chatId = data.id || data.chat_id
     if (!chatId) throw new Error(result?.msg || copy.requestFailed)
     await pollForChat(chatId, assistantIndex)
+    await loadConversationHistory()
   } catch (error) {
     if (messages.value[assistantIndex]) {
       messages.value[assistantIndex] = {

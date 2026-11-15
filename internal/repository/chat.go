@@ -42,6 +42,10 @@ func (r *ChatRepository) CreateChat(ctx context.Context, id, conversationID, sta
 	now := time.Now()
 	_, err := r.db.ExecContext(ctx, "INSERT INTO ai_chat (id,conversation_id,status,created_at,updated_at) "+
 		"VALUES (?,?,?,?,?)", id, conversationID, status, now, now)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, "UPDATE ai_conversation SET updated_at=? WHERE id=?", now, conversationID)
 	return err
 }
 
