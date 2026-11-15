@@ -512,3 +512,9 @@ button:disabled { cursor: not-allowed; }
 
 .pm-model-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; cursor: pointer; }
 .pm-model-toggle input { width: 14px; height: 14px; flex: 0 0 auto; accent-color: #5269d7; }
+
+.pm-model-row input[type="checkbox"] { width: 14px; height: 14px; flex: 0 0 14px; accent-color: #5269d7; }
+.pm-model-row input.pm-metadata-input { width: 74px; height: 27px; flex: 0 0 74px; padding: 0 5px; border: 1px solid #e7eaf1; border-radius: 6px; color: #66718a; font-size: 8px; background: #fff; }
+@media (max-width: 760px) {
+  .pm-model-row input.pm-metadata-input { width: 68px; flex-basis: 68px; }
+}
