@@ -42,7 +42,7 @@ export const copy = Object.freeze({
   attach: '\u6DFB\u52A0\u9644\u4EF6',
   removeFile: '\u79FB\u9664\u9644\u4EF6',
   emptyTitle: '\u4F60\u597D\uFF0C\u6709\u4EC0\u4E48\u53EF\u4EE5\u5E2E\u4F60\uFF1F',
-  emptyDescription: '\u9009\u62E9\u6A21\u578B\u6216\u667A\u80FD\u4F53\uFF0C\u5F00\u59CB\u4F60\u7684\u5BF9\u8BDD',
+  emptyDescription: '直接输入问题，开始对话',
   send: '\u53D1\u9001',
   loading: '\u52A0\u8F7D\u4E2D...',
   unavailable: '\u6682\u65F6\u65E0\u6CD5\u52A0\u8F7D\u6570\u636E',

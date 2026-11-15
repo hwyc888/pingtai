@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { clearAuth } from '../auth'
@@ -22,18 +22,10 @@ const attachment = ref(null)
 const isSending = ref(false)
 const isLoading = ref(false)
 const pageError = ref('')
-const showAgentsModal = ref(false)
 const showHistoryDrawer = ref(false)
-const showModelMenu = ref(false)
-const knowledgeEnabled = ref(false)
-const webSearchEnabled = ref(false)
 const messageList = ref(null)
 let disposed = false
 
-const selectedBotLabel = computed(() => {
-  const bot = selectedBot.value
-  return bot ? (bot.bot_name || bot.name || bot.bot_id) : copy.selectAgent
-})
 const usernameInitial = computed(() => (username.value || 'U').trim().slice(0, 1).toUpperCase())
 const canSend = computed(() => !isSending.value && Boolean(draft.value.trim()) && Boolean(selectedBot.value))
 
@@ -50,18 +42,6 @@ function scrollToBottom() {
   nextTick(() => {
     if (messageList.value) messageList.value.scrollTop = messageList.value.scrollHeight
   })
-}
-
-function getBotLabel(bot) {
-  return bot?.bot_name || bot?.name || bot?.bot_id || copy.selectAgent
-}
-
-function getBotIcon(bot) {
-  const name = getBotLabel(bot).toLowerCase()
-  if (name.includes('deepseek') || name.includes('deep')) return deepIcon
-  if (name.includes('qwen') || name.includes('tongyi') || name.includes('\u901a\u4e49') || name.includes('\u5343\u95ee')) return tongyiIcon
-  if (name.includes('gpt') || name.includes('chatgpt') || name.includes('openai')) return gptIcon
-  return assistantAvatar
 }
 
 async function loadWorkspaces() {
@@ -105,6 +85,7 @@ async function initialize() {
   try {
     const profile = assertSuccess(await api.get('/auth/me'))
     username.value = profile.display_name || profile.account || '用户'
+    isAdmin.value = Boolean(profile.is_admin)
     localStorage.setItem('username', username.value)
     await loadWorkspaces()
     if (workspaces.value.length) {
@@ -116,40 +97,6 @@ async function initialize() {
     pageError.value = error?.message || copy.unavailable
   } finally {
     isLoading.value = false
-  }
-}
-
-async function chooseWorkspace(workspace) {
-  activeWorkspaceId.value = workspace.id
-  pageError.value = ''
-  try {
-    await loadBots(workspace.id)
-  } catch (error) {
-    bots.value = []
-    selectedBot.value = null
-    pageError.value = error?.message || copy.unavailable
-  }
-}
-
-function chooseBot(bot) {
-  selectedBot.value = bot
-  showAgentsModal.value = false
-  showModelMenu.value = false
-  pageError.value = ''
-}
-
-async function openAgents() {
-  showAgentsModal.value = true
-  if (!workspaces.value.length) {
-    try {
-      await loadWorkspaces()
-      if (workspaces.value.length) {
-        activeWorkspaceId.value = workspaces.value[0].id
-        await loadBots(activeWorkspaceId.value)
-      }
-    } catch (error) {
-      pageError.value = error?.message || copy.unavailable
-    }
   }
 }
 
@@ -393,22 +340,6 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div class="footer-toolbar">
-        <button class="toolbar-chip" type="button" @click="openAgents">&#10022; {{ copy.agents }}</button>
-        <div class="model-selector-wrap">
-          <button class="toolbar-chip model-selector" type="button" :aria-expanded="showModelMenu" @click="showModelMenu = !showModelMenu">
-            <span>{{ selectedBotLabel }}</span><span class="chevron">&#8964;</span>
-          </button>
-          <div v-if="showModelMenu" class="model-menu">
-            <button v-for="bot in bots" :key="bot.bot_id" type="button" class="model-menu-item" :class="{ active: bot.bot_id === selectedBot?.bot_id }" @click="chooseBot(bot)">
-              <span class="mini-bot-mark"><img :src="getBotIcon(bot)" alt="" /></span>
-              <span>{{ getBotLabel(bot) }}</span>
-            </button>
-            <p v-if="!bots.length" class="menu-empty">{{ copy.noAgents }}</p>
-          </div>
-        </div>
-      </div>
-
       <div class="composer-shell">
         <div v-if="attachment" class="attachment-chip">
           <span class="attachment-icon">&#128196;</span>
@@ -432,37 +363,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="feature-toolbar">
-        <button type="button" class="feature-chip" :class="{ active: knowledgeEnabled }" :aria-pressed="knowledgeEnabled" @click="knowledgeEnabled = !knowledgeEnabled">&#9672; {{ copy.knowledge }}</button>
-        <button type="button" class="feature-chip" :class="{ active: webSearchEnabled }" :aria-pressed="webSearchEnabled" @click="webSearchEnabled = !webSearchEnabled">&#9788; {{ copy.webSearch }}</button>
-      </div>
     </footer>
-
-    <div v-if="showAgentsModal" class="modal-backdrop" @click.self="showAgentsModal = false">
-      <section class="agents-modal" role="dialog" aria-modal="true" :aria-label="copy.selectAgent">
-        <header class="modal-header">
-          <div>
-            <p class="modal-eyebrow">{{ copy.selectWorkspace }}</p>
-            <h2>{{ copy.selectAgent }}</h2>
-          </div>
-          <button class="icon-button" type="button" :aria-label="copy.close" @click="showAgentsModal = false">&times;</button>
-        </header>
-        <div class="workspace-tabs">
-          <button v-for="workspace in workspaces" :key="workspace.id" type="button" :class="{ active: activeWorkspaceId === workspace.id }" @click="chooseWorkspace(workspace)">{{ workspace.name }}</button>
-        </div>
-        <div class="agent-list">
-          <button v-for="bot in bots" :key="bot.bot_id" type="button" class="agent-option" :class="{ selected: bot.bot_id === selectedBot?.bot_id }" @click="chooseBot(bot)">
-            <span class="agent-avatar"><img :src="getBotIcon(bot)" alt="" /></span>
-            <span class="agent-copy">
-              <strong>{{ getBotLabel(bot) }}</strong>
-              <small>{{ bot.description || bot.desc || '' }}</small>
-            </span>
-            <span v-if="bot.bot_id === selectedBot?.bot_id" class="selected-mark">&#10003;</span>
-          </button>
-          <p v-if="!bots.length" class="empty-agents">{{ copy.noAgents }}</p>
-        </div>
-      </section>
-    </div>
 
     <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
       <aside class="history-drawer" :aria-label="copy.history">
@@ -475,6 +376,7 @@ onBeforeUnmount(() => {
         <footer class="drawer-user">
           <span class="user-avatar">{{ usernameInitial }}</span>
           <strong>{{ username }}</strong>
+          <button v-if="isAdmin" type="button" @click="router.push('/admin')">管理后台</button>
           <button type="button" @click="logout">{{ copy.logout }}</button>
         </footer>
       </aside>

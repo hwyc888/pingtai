@@ -17,8 +17,9 @@ func (h *Handler) AddUser(w http.ResponseWriter, r *http.Request) {
 	}
 	username := strings.TrimSpace(stringValue(payload["username"]))
 	password := stringValue(payload["password"])
-	userType := intValue(payload["usertype"], 0)
-	if username == "" || password == "" || userType == 0 {
+	userType, hasUserType := payload["usertype"]
+	role := intValue(userType, -1)
+	if username == "" || password == "" || !hasUserType || role < 0 || role > 1 {
 		writeJSON(w, http.StatusOK, map[string]any{"errcode": "501", "errmsg": "缺少参数"})
 		return
 	}
@@ -34,7 +35,7 @@ func (h *Handler) AddUser(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"errcode": 500, "errmsg": "密码加密失败"})
 		return
 	}
-	if _, err := h.Users.Create(r.Context(), username, hash, userType); err != nil {
+	if _, err := h.Users.Create(r.Context(), username, hash, role); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"errcode": "501", "errmsg": "添加用户失败"})
 		return
 	}
