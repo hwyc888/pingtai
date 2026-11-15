@@ -269,3 +269,27 @@ button:disabled { cursor: not-allowed; }
   .admin-reset-form { align-items: stretch; flex-direction: column; }
   .admin-card { padding: 17px; }
 }
+
+.provider-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 18px; }
+.provider-list { display: flex; flex-direction: column; gap: 7px; }
+.provider-list-item { display: flex; flex-direction: column; gap: 5px; padding: 12px; border: 1px solid #e8ebf4; border-radius: 11px; color: #4d5874; text-align: left; background: #fafbff; cursor: pointer; }
+.provider-list-item.active { border-color: #cbd4ff; color: #304bd3; background: #f0f3ff; }
+.provider-list-item strong { font-size: 12px; }
+.provider-list-item small { overflow: hidden; color: #9299ac; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.provider-editor { min-width: 0; }
+.provider-form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.provider-form-grid label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: #606984; font-size: 11px; font-weight: 650; }
+.provider-form-grid label.full { grid-column: 1 / -1; }
+.provider-form-grid input, .provider-form-grid textarea, .provider-form-grid select { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid #e1e5ef; border-radius: 9px; outline: none; color: #303852; font: inherit; font-weight: 400; background: #fff; }
+.provider-form-grid textarea { resize: vertical; }
+.provider-form-grid input:focus, .provider-form-grid textarea:focus, .provider-form-grid select:focus { border-color: #8497ff; box-shadow: 0 0 0 3px rgba(44,77,255,.08); }
+.provider-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.provider-model-table { margin-top: 12px; }
+.model-metadata-input { width: 100px; height: 32px; padding: 0 7px; border: 1px solid #e1e5ef; border-radius: 7px; font-size: 11px; }
+.provider-model-table input[type="checkbox"] { accent-color: var(--brand); }
+@media (max-width: 760px) {
+  .provider-layout { grid-template-columns: 1fr; }
+  .provider-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .provider-form-grid { grid-template-columns: 1fr; }
+  .provider-form-grid label.full { grid-column: auto; }
+}

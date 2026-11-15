@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log"
 	"net"
@@ -146,6 +147,23 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 			cleanup()
 			return nil, nil, nil, errors.New("create the first administrator in web setup")
 		}
+	}
+	providers := repository.NewProviderRepository(db)
+	if active, models, providerErr := providers.Active(ctx); providerErr == nil {
+		cfg.ChatProvider = "openai"
+		cfg.OpenAIBaseURL = active.BaseURL
+		cfg.OpenAIAPIKey = active.APIKey
+		cfg.OpenAIModel = active.DefaultModel
+		cfg.OpenAIMaxTokens = active.MaxOutputTokens
+		cfg.OpenAITimeout = time.Duration(active.TimeoutSeconds) * time.Second
+		cfg.OpenAISystemPrompt = active.SystemPrompt
+		cfg.OpenAIModels = make([]string, 0, len(models))
+		for _, item := range models {
+			cfg.OpenAIModels = append(cfg.OpenAIModels, item.ModelID)
+		}
+	} else if !errors.Is(providerErr, sql.ErrNoRows) {
+		cleanup()
+		return nil, nil, nil, errors.New("cannot load active AI provider from SQLite")
 	}
 	users := repository.NewUserRepository(db)
 	chats := repository.NewChatRepository(db)

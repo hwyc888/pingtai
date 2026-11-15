@@ -49,10 +49,10 @@ func TestSQLiteMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("second migration should be idempotent: %v", err)
 	}
 	var tableCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('ai_user','ai_conversation','ai_chat','ai_message','ai_message_context')").Scan(&tableCount); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('ai_user','ai_conversation','ai_chat','ai_message','ai_message_context','ai_provider','ai_provider_model')").Scan(&tableCount); err != nil {
 		t.Fatal(err)
 	}
-	if tableCount != 5 {
+	if tableCount != 7 {
 		t.Fatalf("created %d expected application tables", tableCount)
 	}
 	if _, err := db.ExecContext(ctx, "INSERT INTO ai_user (username,password,usertype,status,deltag) VALUES (?,?,?,?,0)", "admin", "hash", 1, 1); err != nil {

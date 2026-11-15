@@ -53,6 +53,13 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("GET /auth/get_user_list", admin(http.HandlerFunc(h.GetUserList)))
 	api.Handle("POST /auth/editUser", admin(http.HandlerFunc(h.EditUser)))
 
+	api.Handle("GET /admin/providers", admin(http.HandlerFunc(h.ListProviders)))
+	api.Handle("POST /admin/providers/save", admin(http.HandlerFunc(h.SaveProvider)))
+	api.Handle("POST /admin/providers/delete", admin(http.HandlerFunc(h.DeleteProvider)))
+	api.Handle("POST /admin/providers/activate", admin(http.HandlerFunc(h.ActivateProvider)))
+	api.Handle("POST /admin/providers/discover", admin(http.HandlerFunc(h.DiscoverProviderModels)))
+	api.Handle("POST /admin/providers/models/update", admin(http.HandlerFunc(h.UpdateProviderModel)))
+
 	api.Handle("GET /agents/getAgentConfig", admin(http.HandlerFunc(h.GetAgentConfig)))
 	api.Handle("POST /agents/updateAgent", admin(http.HandlerFunc(h.UpdateAgent)))
 	api.Handle("POST /agents/publishAgent", admin(http.HandlerFunc(h.PublishAgent)))
@@ -87,6 +94,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	root.Handle("/auth/", api)
 	root.Handle("/agents/", api)
 	root.Handle("/datasets/", api)
+	root.Handle("/admin/", api)
 	root.Handle("/model/", api)
 	root.Handle("/v1/", api)
 	root.Handle("/health", api)
