@@ -21,9 +21,6 @@ func runCreateAdmin(cfg config.Config, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if cfg.DBDSN == "" {
-		return errors.New("MYSQL_DSN or DATABASE_URL is required")
-	}
 	password := os.Getenv("ADMIN_PASSWORD")
 	if password == "" {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -58,7 +55,7 @@ func runCreateAdmin(cfg config.Config, args []string) error {
 		return err
 	}
 	ctx := context.Background()
-	db, err := database.Open(ctx, cfg.DBDSN)
+	db, err := database.Open(ctx, cfg.DatabasePath)
 	if err != nil {
 		return err
 	}

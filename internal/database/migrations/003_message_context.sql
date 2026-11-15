@@ -1,5 +1,4 @@
 CREATE TABLE IF NOT EXISTS ai_message_context (
-  message_id BIGINT NOT NULL,
-  content_json LONGTEXT NOT NULL,
-  PRIMARY KEY (message_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  message_id INTEGER NOT NULL PRIMARY KEY,
+  content_json TEXT NOT NULL
+);

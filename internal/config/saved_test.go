@@ -11,10 +11,10 @@ import (
 func TestSavedConfigurationSurvivesReloadAndOverridesEnvironment(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pingtai-config.json")
 	t.Setenv("PINGTAI_CONFIG_FILE", path)
-	t.Setenv("MYSQL_DSN", "stale-environment-dsn")
+	t.Setenv("PINGTAI_DB_PATH", filepath.Join(t.TempDir(), "stale.db"))
 	t.Setenv("JWT_SECRET_KEY", "stale-environment-secret")
 	saved := Defaults()
-	saved.DBDSN = "webuser:password@tcp(127.0.0.1:3306)/webdb?parseTime=true"
+	saved.DatabasePath = filepath.Join(t.TempDir(), "saved.db")
 	saved.JWTSecret = strings.Repeat("secret", 8)
 	saved.CTYunAPIKey = "saved-model-key"
 	saved.CTYunSystemPrompt = "first line\nsecond line"
@@ -59,5 +59,16 @@ func TestMalformedSavedConfigurationDoesNotFallBackSilently(t *testing.T) {
 	}
 	if _, err := Load(); err == nil {
 		t.Fatal("malformed saved configuration must trigger recovery setup")
+	}
+}
+
+func TestLegacyMySQLConfigurationRequiresExplicitSQLiteMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pingtai-config.json")
+	t.Setenv("PINGTAI_CONFIG_FILE", path)
+	if err := os.WriteFile(path, []byte(`{"DBDSN":"legacy-mysql-dsn"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "legacy MySQL configuration detected") {
+		t.Fatalf("legacy MySQL configuration should require explicit migration, got %v", err)
 	}
 }

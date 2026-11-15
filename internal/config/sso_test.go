@@ -7,7 +7,7 @@ import (
 
 func TestSSOConfigurationAndAdministratorAllowlist(t *testing.T) {
 	cfg := Defaults()
-	cfg.DBDSN = "user:password@tcp(127.0.0.1:3306)/pingtai?parseTime=true"
+	cfg.AuthMode = "sso"
 	cfg.JWTSecret = strings.Repeat("s", 40)
 	cfg.SSOClientID = "client-id"
 	cfg.SSOClientSecret = "client-secret"
@@ -30,7 +30,7 @@ func TestSSOConfigurationAndAdministratorAllowlist(t *testing.T) {
 
 func TestPartialSSOConfigurationIsRejected(t *testing.T) {
 	cfg := Defaults()
-	cfg.DBDSN = "user:password@tcp(127.0.0.1:3306)/pingtai?parseTime=true"
+	cfg.AuthMode = "sso"
 	cfg.JWTSecret = strings.Repeat("s", 40)
 	cfg.SSOClientID = "client-id"
 	if err := cfg.Validate(); err == nil {

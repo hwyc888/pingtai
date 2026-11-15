@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"pingtai/internal/config"
 	"pingtai/internal/database"
 	"pingtai/internal/repository"
@@ -142,26 +141,6 @@ func (h *Handler) authorized(r *http.Request) bool {
 	return err == nil && user.UserType == 1
 }
 
-type databaseFields struct {
-	Host          string
-	Port          string
-	Username      string
-	Password      string
-	Name          string
-	ClearPassword bool
-}
-
-func parseDatabase(current config.Config) (*mysql.Config, databaseFields) {
-	parsed, err := mysql.ParseDSN(current.DBDSN)
-	if err != nil || current.DBDSN == "" {
-		parsed = mysql.NewConfig()
-	}
-	host, port, err := net.SplitHostPort(parsed.Addr)
-	if err != nil {
-		host, port = "127.0.0.1", "3306"
-	}
-	return parsed, databaseFields{Host: host, Port: port, Username: parsed.User, Name: parsed.DBName}
-}
 
 func (h *Handler) read(w http.ResponseWriter) {
 	contents, _ := json.Marshal(h.current)
@@ -172,17 +151,13 @@ func (h *Handler) read(w http.ResponseWriter) {
 		configured[key] = visible[key] != ""
 		visible[key] = ""
 	}
-	delete(visible, "DBDSN")
-	parsed, fields := parseDatabase(h.current)
-	configured["DatabasePassword"] = parsed.Passwd != ""
 	h.respond(w, http.StatusOK, map[string]any{
-		"settings": visible, "database": fields, "configured": configured, "path": config.SettingsPath(),
+		"settings": visible, "configured": configured, "path": config.SettingsPath(), "database_path": h.current.DatabasePath,
 	})
 }
 
 type saveRequest struct {
 	Settings      map[string]json.RawMessage
-	Database      databaseFields
 	ClearSecrets  []string
 	AdminUsername string
 	AdminPassword string
@@ -234,7 +209,7 @@ func (h *Handler) buildCandidate(request saveRequest) (config.Config, error) {
 	var merged map[string]json.RawMessage
 	_ = json.Unmarshal(contents, &merged)
 	for key, value := range request.Settings {
-		if _, exists := merged[key]; !exists || key == "DBDSN" || key == "AccessTokenTTL" || key == "RefreshTokenTTL" {
+		if _, exists := merged[key]; !exists || key == "AccessTokenTTL" || key == "RefreshTokenTTL" {
 			return config.Config{}, errors.New("Unknown or read-only configuration field.")
 		}
 		if string(value) == "null" {
@@ -267,29 +242,6 @@ func (h *Handler) buildCandidate(request saveRequest) (config.Config, error) {
 	if err := json.Unmarshal(contents, &candidate); err != nil {
 		return candidate, errors.New("Configuration field has an invalid type.")
 	}
-	fields := request.Database
-	port, err := strconv.Atoi(fields.Port)
-	if err != nil || port < 1 || port > 65535 || strings.TrimSpace(fields.Host) == "" || strings.TrimSpace(fields.Username) == "" || strings.TrimSpace(fields.Name) == "" {
-		return candidate, errors.New("Database host, port (1-65535), username and database name are required.")
-	}
-	parsed, _ := parseDatabase(h.current)
-	parsed.Net = "tcp"
-	parsed.Addr = net.JoinHostPort(strings.TrimSpace(fields.Host), fields.Port)
-	parsed.User = strings.TrimSpace(fields.Username)
-	parsed.DBName = strings.TrimSpace(fields.Name)
-	if fields.ClearPassword {
-		parsed.Passwd = ""
-	} else if fields.Password != "" {
-		parsed.Passwd = fields.Password
-	}
-	parsed.ParseTime = true
-	parsed.Loc = time.Local
-	parsed.Timeout = 10 * time.Second
-	if parsed.Params == nil {
-		parsed.Params = make(map[string]string)
-	}
-	parsed.Params["charset"] = "utf8mb4"
-	candidate.DBDSN = parsed.FormatDSN()
 	if candidate.JWTSecret == "" || strings.HasPrefix(candidate.JWTSecret, "REPLACE_") {
 		candidate.JWTSecret = rand.Text() + rand.Text()
 	}
@@ -319,13 +271,13 @@ func (h *Handler) buildCandidate(request saveRequest) (config.Config, error) {
 }
 
 func prepareDatabase(ctx context.Context, candidate config.Config, username, password string) error {
-	db, err := database.Open(ctx, candidate.DBDSN)
+	db, err := database.Open(ctx, candidate.DatabasePath)
 	if err != nil {
-		return errors.New("Cannot connect to MySQL. Check the host, port, credentials and database name; the database must already exist.")
+		return errors.New("Cannot open the SQLite database file. Check the configured path and parent-directory permissions.")
 	}
 	defer db.Close()
 	if err := database.Migrate(ctx, db); err != nil {
-		return errors.New("Cannot initialize database tables. Check the database account's schema privileges.")
+		return errors.New("Cannot initialize SQLite tables. Check the database file and directory permissions.")
 	}
 	if candidate.SSOConfigured() {
 		return nil

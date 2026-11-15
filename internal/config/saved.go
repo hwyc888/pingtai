@@ -19,9 +19,14 @@ func SettingsPath() string {
 	return filepath.Join(executableDir(), "pingtai-config.json")
 }
 
+func DefaultDatabasePath() string {
+	return filepath.Join(executableDir(), "data", "pingtai.db")
+}
+
 func Defaults() Config {
 	return Config{
-		Addr: ":5050", SSOBaseURL: "https://ids.zcvc.cn/cas", ChatProvider: "openai", AccessTokenTTL: 30 * time.Minute,
+		Addr: ":5050", AuthMode: "local", DatabasePath: DefaultDatabasePath(),
+		SSOBaseURL: "https://ids.zcvc.cn/cas", ChatProvider: "openai", AccessTokenTTL: 30 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour, MaxUploadBytes: 100 * 1024 * 1024,
 		CozeBaseURL: "https://api.coze.cn", CozeWorkspaceID: "7481824441182617636",
 		CTYunAuthMode: "bearer", CTYunRegion: "QG", CTYunSignPrefix: "teleai-cloud-auth-v1",
@@ -37,6 +42,15 @@ func loadSaved() (Config, bool, error) {
 	}
 	if err != nil {
 		return Config{}, true, fmt.Errorf("read web configuration: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(contents, &fields); err != nil {
+		return Config{}, true, errors.New("web configuration is invalid JSON; reopen /setup to repair it")
+	}
+	if _, hasDatabasePath := fields["DatabasePath"]; !hasDatabasePath {
+		if _, hasLegacyDSN := fields["DBDSN"]; hasLegacyDSN {
+			return Config{}, true, errors.New("legacy MySQL configuration detected; back up and migrate existing data before configuring the SQLite database")
+		}
 	}
 	saved := Defaults()
 	if err := json.Unmarshal(contents, &saved); err != nil {

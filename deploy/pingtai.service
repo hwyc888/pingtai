@@ -1,6 +1,6 @@
 [Unit]
 Description=pingtai Go platform
-After=network.target mysql.service
+After=network.target
 Wants=network.target
 
 [Service]
@@ -9,7 +9,10 @@ User=www-data
 Group=www-data
 WorkingDirectory=/opt/pingtai
 EnvironmentFile=-/etc/pingtai.env
-Environment=PINGTAI_CONFIG_FILE=/opt/pingtai/pingtai-config.json
+StateDirectory=pingtai
+StateDirectoryMode=0700
+Environment=PINGTAI_CONFIG_FILE=/var/lib/pingtai/pingtai-config.json
+Environment=PINGTAI_DB_PATH=/var/lib/pingtai/pingtai.db
 ExecStart=/opt/pingtai/pingtai-linux-amd64
 Restart=on-failure
 RestartSec=5

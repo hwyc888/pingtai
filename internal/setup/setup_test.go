@@ -28,7 +28,7 @@ func setupRequest(handler *Handler, method, body, token, origin string) *httptes
 
 func TestSetupProtectsCredentialsAndRejectsCrossOriginRequests(t *testing.T) {
 	current := config.Defaults()
-	current.DBDSN = "testuser:database-password@tcp(localhost:3306)/testdb"
+	current.DatabasePath = filepath.Join(t.TempDir(), "data", "test.db")
 	current.JWTSecret = strings.Repeat("jwt-secret", 5)
 	current.CTYunAPIKey = "private-model-key"
 	current.OpenAIAPIKey = "private-openai-key"
@@ -48,7 +48,7 @@ func TestSetupProtectsCredentialsAndRejectsCrossOriginRequests(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("authorized read returned %d", response.Code)
 	}
-	for _, secret := range []string{"database-password", current.JWTSecret, current.CTYunAPIKey, current.OpenAIAPIKey, current.CozePrivateKey, current.DBDSN} {
+	for _, secret := range []string{current.JWTSecret, current.CTYunAPIKey, current.OpenAIAPIKey, current.CozePrivateKey} {
 		if strings.Contains(response.Body.String(), secret) {
 			t.Fatal("a saved credential was returned by the configuration API")
 		}
@@ -58,19 +58,19 @@ func TestSetupProtectsCredentialsAndRejectsCrossOriginRequests(t *testing.T) {
 func TestSetupSavePreservesSecretsAndRequiresRestart(t *testing.T) {
 	t.Setenv("PINGTAI_CONFIG_FILE", filepath.Join(t.TempDir(), "pingtai-config.json"))
 	current := config.Defaults()
-	current.DBDSN = "testuser:database-password@tcp(localhost:3306)/testdb?parseTime=true"
+	current.DatabasePath = filepath.Join(t.TempDir(), "data", "test.db")
 	current.JWTSecret = strings.Repeat("jwt-secret", 5)
 	current.CTYunAPIKey = "preserved-key"
 	current.OpenAIAPIKey = "preserved-openai-key"
 	current.CozeAccessToken = "removed-token"
 	handler := New(current, nil)
 	handler.prepare = func(_ context.Context, candidate config.Config, username, password string) error {
-		if !strings.Contains(candidate.DBDSN, "database-password") || username != "admin" || password != "admin-password" {
+		if candidate.DatabasePath != current.DatabasePath || username != "admin" || password != "admin-password" {
 			t.Fatal("the database password or administrator inputs did not reach initialization")
 		}
 		return nil
 	}
-	body := `{"Settings":{"CTYunAPIKey":"","OpenAIAPIKey":"","JWTSecret":"","CTYunModel":"new-model"},"Database":{"Host":"localhost","Port":"3306","Username":"testuser","Name":"testdb"},"ClearSecrets":["CozeAccessToken"],"AdminUsername":"admin","AdminPassword":"admin-password"}`
+	body := `{"Settings":{"CTYunAPIKey":"","OpenAIAPIKey":"","JWTSecret":"","CTYunModel":"new-model"},"ClearSecrets":["CozeAccessToken"],"AdminUsername":"admin","AdminPassword":"admin-password"}`
 	response := setupRequest(handler, http.MethodPost, body, handler.BootstrapToken(), "http://localhost")
 	if response.Code != http.StatusOK {
 		t.Fatalf("save failed: %d %s", response.Code, response.Body.String())
@@ -95,7 +95,7 @@ func TestFailedDatabaseValidationDoesNotOverwriteSettings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pingtai-config.json")
 	t.Setenv("PINGTAI_CONFIG_FILE", path)
 	current := config.Defaults()
-	current.DBDSN = "testuser:password@tcp(localhost:3306)/testdb"
+	current.DatabasePath = filepath.Join(t.TempDir(), "data", "test.db")
 	current.JWTSecret = strings.Repeat("secret", 8)
 	if err := config.Save(current); err != nil {
 		t.Fatal(err)
@@ -108,7 +108,7 @@ func TestFailedDatabaseValidationDoesNotOverwriteSettings(t *testing.T) {
 	handler.prepare = func(context.Context, config.Config, string, string) error {
 		return errors.New("database validation failed")
 	}
-	request := saveRequest{Database: databaseFields{Host: "localhost", Port: "3306", Username: "testuser", Name: "testdb"}}
+	request := saveRequest{}
 	body, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)

@@ -30,9 +30,9 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 1. Extract pingtai-release.zip to a writable directory.
 2. Double-click start.bat.
 3. The browser opens automatically. No Notepad or command-line configuration is needed.
-4. In the web wizard, enter the MySQL host, port, username, password and existing database name.
-5. Configure the school SSO OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). Configure the model service settings. A JWT signing secret is generated automatically when left blank. The local administrator username/password is only needed for the legacy local-login mode; SSO mode does not create or authenticate users through ai_user.
-6. Click the validate-and-save button. The server tests MySQL, initializes tables and writes pingtai-config.json next to the executable.
+4. In the web wizard, keep the default local account mode or select school SSO. In local mode, create the initial administrator username and password.
+5. If SSO is selected, configure the OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). Configure the model service settings. A JWT signing secret is generated automatically when left blank.
+6. Set the SQLite database file path if needed. The server creates the directory and database file, initializes tables, and writes pingtai-config.json next to the executable. No MySQL server or database account is required.
 7. Stop the current server (Ctrl+C or close its window), then double-click start.bat again. The saved configuration is loaded and the normal frontend opens.
 
 The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and sign in through the school unified identity service using an account listed in SSO_ADMIN_ACCOUNTS. Save and restart again to apply changes. If you change the listening port, use the new port after restart.
@@ -48,9 +48,9 @@ Extract the ZIP on a Linux AMD64 host, then run:
 
 On first start (or when database/configuration initialization fails), the server stays running in setup mode and logs a private URL such as http://127.0.0.1:5050/setup#token=.... Open that exact URL in a browser. For a remote server, use HTTPS or an SSH tunnel; replace the hostname in the URL as appropriate. The setup key changes on every process start and is disabled after a successful save. Do not share this URL or its key.
 
-Complete the same web wizard, stop and restart the process, then open the normal frontend. No terminal prompts are required. The optional create-admin command is retained for existing deployments.
+Complete the same web wizard, stop and restart the process, then open the normal frontend. No terminal prompts are required. The optional `create-admin` command can create or reset a local administrator in SQLite.
 
-For systemd, use deploy/pingtai.service. Give its service user write permission to the configuration directory; the example uses /opt/pingtai/pingtai-config.json. The legacy /etc/pingtai.env is optional. Read the initial private link from the service journal, configure in the browser, then restart with systemctl restart pingtai.
+For systemd, use deploy/pingtai.service. The example uses systemd `StateDirectory=pingtai` to create `/var/lib/pingtai` with ownership for the service user; both `pingtai-config.json` and `pingtai.db` are stored there. The legacy `/etc/pingtai.env` is optional. Read the initial private link from the service journal, configure in the browser, then restart with `systemctl restart pingtai`.
 
 ## Saved configuration and restart behavior
 
@@ -59,9 +59,9 @@ For systemd, use deploy/pingtai.service. Give its service user write permission 
 - The file contains credentials. Keep it private, outside any externally served WEB_DIR, and back it up securely. On Unix it is created with owner-only permissions. On Windows restrict access to the deployment folder.
 - Saved passwords and keys are never sent back to the page. Blank secret inputs preserve existing values; explicit clear checkboxes remove them. Changing the JWT secret invalidates existing login tokens after restart.
 - Existing active administrators are not reset by the wizard. Initial administrator fields are used only when the target database has no active administrator.
-- If validation or the database connection fails, the existing saved file is not overwritten. If writing the file fails after table/admin initialization, those database changes remain; fix folder permissions and save again.
+- If validation or SQLite initialization fails, the existing saved file is not overwritten. If writing the file fails after table/admin initialization, those database changes remain; fix folder permissions and save again.
 - A successful save requires a manual service restart. Setup locks further configuration changes until that restart; an already-running application continues with its previous configuration.
-- A database failure on restart opens protected recovery setup rather than terminating the process. Health requests return HTTP 503 until normal initialization succeeds.
+- A SQLite file or migration failure on restart opens protected recovery setup rather than terminating the process. Health requests return HTTP 503 until normal initialization succeeds.
 - Model credentials are optional for initial deployment. The page warns if the selected chat provider is incomplete; chat calls require working provider credentials and a reachable upstream service.
 
 ## School unified identity authentication
@@ -84,13 +84,13 @@ Set `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URL` and `SSO_ADMIN_ACCO
 
 The profile parser prefers `user.useraccount`, then `user.account`, then the top-level `id` as the stable account identifier. It uses `user.username` as the display name when present. The school guide's sample profile shows these fields; confirm the account identifier selected for your tenant with the school's SSO administrator.
 
-`SSO_ADMIN_ACCOUNTS` is a comma-, semicolon- or newline-separated allowlist of school SSO account identifiers. Only these accounts can access platform administration APIs and the protected setup page. Normal users can use the chat UI without a MySQL account. MySQL remains the platform's conversation and application-data store; it is not used to verify SSO passwords.
+`SSO_ADMIN_ACCOUNTS` is a comma-, semicolon- or newline-separated allowlist of school SSO account identifiers. Only these accounts can access platform administration APIs and the protected setup page. Normal users can use the chat UI without a local account when SSO mode is selected. SQLite remains the platform's conversation and application-data store; it is not used to verify school passwords.
 
 The OAuth2 guide does not define a separate token-revocation endpoint or guarantee a global CAS logout callback for this flow. Logging out of pingtai clears the local platform session; the school's SSO session may remain active until the school expires or ends it.
 
 ## Configuration
 
-The MySQL database must already exist. Migrations create tables using non-destructive CREATE TABLE IF NOT EXISTS statements and preserve the existing ai_user table.
+SQLite is the only runtime database. The server creates `data/pingtai.db` automatically (or the configured `PINGTAI_DB_PATH`) and applies non-destructive `CREATE TABLE IF NOT EXISTS` migrations. SQLite runs in WAL mode with a busy timeout; the database file and its directory must be writable by the service account. Stop the service before taking a simple file copy backup so the WAL is checkpointed.
 
 ### Generic OpenAI-compatible service (recommended)
 
@@ -171,16 +171,16 @@ for chunk in client.chat.completions.create(
 ### Context and multi-turn conversations
 
 - Standard /v1/chat/completions is stateless, as in OpenAI. The client sends the complete `messages` history each time. The platform does not invent a conversation ID, store these API messages, inject prompts or truncate them. System/developer/user/assistant/tool messages, tool_calls/tool_call_id, multimodal content arrays, tools, tool_choice, response_format, stream_options and provider extension parameters are preserved. Tool execution is the calling application's responsibility.
-- The built-in web chat uses authenticated `/agents` routes. Its conversation and messages are stored in MySQL and restored after service restart. Only successful completed turns are added to future model context; failed/in-progress requests and their error messages are excluded. Each conversation is scoped to its owning user.
+- The built-in web chat uses authenticated `/agents` routes. Its conversation and messages are stored in SQLite and restored after service restart. Only successful completed turns are added to future model context; failed/in-progress requests and their error messages are excluded. Each conversation is scoped to its owning user.
 - CONTEXT_TURNS controls the number of complete previous web-chat turns (default 20). `0` sends all successful stored turns; 1-1000 sends only the most recent turns. This is a turn limit, not a tokenizer or an unlimited model context window. If input exceeds the upstream token window, reduce the history setting or start a new conversation. Standard API requests are not affected by this setting.
 - Web image attachments retain their structured image_url content in the new ai_message_context table, so subsequent turns can still refer to them. Existing historical images saved only as an image placeholder cannot be reconstructed. TXT attachment text is included in context; PDF/DOC parsing remains a Coze feature. Web chat displays text/reasoning, not an autonomous tool execution loop; use the standard API for tools and client-managed streaming.
 
 ### Verification
 
-`go test ./...` covers proxy paths, auth/error envelopes, parameter/context preservation and incremental SSE delivery. To run the real database setup/restart/context integration test, set PINGTAI_TEST_MYSQL_DSN to a disposable MySQL instance with schema creation privileges and run `go test -count=1 -v ./cmd/pingtai`. It creates and drops its own test schema and verifies initial web configuration, login, image-context persistence across reinitialization, whole-turn limits, failed-turn exclusion and conversation isolation.
+`go test ./...` covers proxy paths, auth/error envelopes, parameter/context preservation and incremental SSE delivery. To run the real database setup/restart/context integration test, run `go test -count=1 -v ./cmd/pingtai`. The integration test creates an isolated temporary SQLite database and verifies initial web configuration, login, image-context persistence across reinitialization, whole-turn limits, failed-turn exclusion and conversation isolation.
 
 For the optional official Python SDK interoperability test, set PINGTAI_TEST_PYTHON to a Python executable with `openai` already installed, then run `go test -count=1 -v ./internal/httpapi`. It uses a local mock upstream to verify SDK completion, streaming, model listing, tool-call response parsing and typed errors. This does not require a paid provider or prove availability of any particular external vendor.
 
 ## Security
 
-Do not commit or share .env or pingtai-config.json. They contain database credentials, JWT signing secrets and model API keys. The release ZIP only contains .env.example and never includes saved configuration or private setup links.
+Do not commit or share .env or pingtai-config.json. They contain JWT signing secrets, SSO client secrets and model API keys. The release ZIP only contains .env.example and never includes saved configuration or private setup links.

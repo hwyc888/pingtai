@@ -118,7 +118,7 @@ func (r *UserRepository) CreateOrUpdateAdmin(ctx context.Context, username, pass
 	defer tx.Rollback()
 
 	var id int64
-	err = tx.QueryRowContext(ctx, "SELECT id FROM ai_user WHERE username=? LIMIT 1 FOR UPDATE", username).Scan(&id)
+	err = tx.QueryRowContext(ctx, "SELECT id FROM ai_user WHERE username=? LIMIT 1", username).Scan(&id)
 	now := time.Now()
 	switch {
 	case err == nil:

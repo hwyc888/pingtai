@@ -127,14 +127,14 @@ func run() error {
 }
 
 func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *setup.Handler, func(), error) {
-	db, err := database.Open(ctx, cfg.DBDSN)
+	db, err := database.Open(ctx, cfg.DatabasePath)
 	if err != nil {
-		return nil, nil, nil, errors.New("database connection failed; check the database settings in /setup")
+		return nil, nil, nil, errors.New("cannot open SQLite database; check the SQLite file path and directory permissions in /setup")
 	}
 	cleanup := func() { _ = db.Close() }
 	if err := database.Migrate(ctx, db); err != nil {
 		cleanup()
-		return nil, nil, nil, errors.New("database table initialization failed; check account privileges in /setup")
+		return nil, nil, nil, errors.New("SQLite database migration failed; check the database file and directory permissions")
 	}
 	if !cfg.SSOConfigured() {
 		var admins int

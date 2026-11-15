@@ -42,6 +42,7 @@ func TestSSOCallbackExchangesCodeAndCreatesHttpOnlySessionCookies(t *testing.T) 
 	defer provider.Close()
 
 	cfg := config.Defaults()
+	cfg.AuthMode = "sso"
 	cfg.SSOBaseURL = provider.URL + "/cas"
 	cfg.SSOClientID = "client"
 	cfg.SSOClientSecret = "secret"

@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"net/url"
 	"os"
 	"strconv"
@@ -12,12 +11,13 @@ import (
 
 type Config struct {
 	Addr               string
+	AuthMode           string
+	DatabasePath       string
 	SSOBaseURL         string
 	SSOClientID        string
 	SSOClientSecret    string
 	SSORedirectURL     string
 	SSOAdminAccounts   string
-	DBDSN              string
 	JWTSecret          string
 	WebDir             string
 	ChatProvider       string
@@ -61,14 +61,6 @@ func Load() (Config, error) {
 	}
 	loadConfigDotEnv()
 
-	dsn := strings.TrimSpace(os.Getenv("MYSQL_DSN"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	}
-	dsn, err := normalizeMySQLDSN(dsn)
-	if err != nil {
-		return Config{}, err
-	}
 
 	workspaceID := env("COZE_WORKSPACE_ID", "7481824441182617636")
 	cozePrivateKeyFile := strings.TrimSpace(os.Getenv("COZE_PRIVATE_KEY_FILE"))
@@ -80,7 +72,7 @@ func Load() (Config, error) {
 	cozeAppID := env("COZE_APP_ID", strings.TrimSpace(os.Getenv("COZE_CLIENT_ID")))
 	authMode := strings.ToLower(env("CTYUN_AUTH_MODE", "bearer"))
 	if authMode != "bearer" && authMode != "signature" {
-		return Config{}, fmt.Errorf("CTYUN_AUTH_MODE must be bearer or signature")
+		return Config{}, errors.New("CTYUN_AUTH_MODE must be bearer or signature")
 	}
 	selectedModels := strings.FieldsFunc(os.Getenv("OPENAI_MODELS"), func(character rune) bool { return character == ',' || character == '\n' })
 	for index := range selectedModels {
@@ -89,12 +81,13 @@ func Load() (Config, error) {
 
 	return Config{
 		Addr:               env("HTTP_ADDR", ":5050"),
+		AuthMode:           strings.ToLower(env("AUTH_MODE", "local")),
+		DatabasePath:       env("PINGTAI_DB_PATH", DefaultDatabasePath()),
 		SSOBaseURL:         strings.TrimRight(env("SSO_BASE_URL", "https://ids.zcvc.cn/cas"), "/"),
 		SSOClientID:        strings.TrimSpace(os.Getenv("SSO_CLIENT_ID")),
 		SSOClientSecret:    strings.TrimSpace(os.Getenv("SSO_CLIENT_SECRET")),
 		SSORedirectURL:     strings.TrimSpace(os.Getenv("SSO_REDIRECT_URL")),
 		SSOAdminAccounts:   strings.TrimSpace(os.Getenv("SSO_ADMIN_ACCOUNTS")),
-		DBDSN:              dsn,
 		JWTSecret:          strings.TrimSpace(os.Getenv("JWT_SECRET_KEY")),
 		WebDir:             strings.TrimSpace(os.Getenv("WEB_DIR")),
 		ChatProvider:       strings.ToLower(env("CHAT_PROVIDER", "openai")),
@@ -134,10 +127,17 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
-	if c.DBDSN == "" {
-		return errors.New("MYSQL_DSN or DATABASE_URL is required")
+	if strings.TrimSpace(c.DatabasePath) == "" {
+		return errors.New("PINGTAI_DB_PATH is required")
 	}
-	if c.SSOConfigured() {
+	authMode := strings.ToLower(strings.TrimSpace(c.AuthMode))
+	if authMode == "" {
+		authMode = "local"
+	}
+	if authMode != "local" && authMode != "sso" {
+		return errors.New("AUTH_MODE must be local or sso")
+	}
+	if c.SSOSettingsComplete() {
 		base, err := url.Parse(c.SSOBaseURL)
 		if err != nil || base.Hostname() == "" || (base.Scheme != "https" && base.Scheme != "http") {
 			return errors.New("SSO_BASE_URL must be a valid HTTP or HTTPS URL")
@@ -146,11 +146,14 @@ func (c Config) Validate() error {
 		if err != nil || redirect.Hostname() == "" || (redirect.Scheme != "https" && redirect.Scheme != "http") {
 			return errors.New("SSO_REDIRECT_URL must be a valid HTTP or HTTPS URL")
 		}
+	}
+	if authMode == "sso" {
+		if !c.SSOSettingsComplete() {
+			return errors.New("SSO mode requires SSO_CLIENT_ID, SSO_CLIENT_SECRET and SSO_REDIRECT_URL")
+		}
 		if strings.TrimSpace(c.SSOAdminAccounts) == "" {
 			return errors.New("SSO_ADMIN_ACCOUNTS must contain at least one administrator account")
 		}
-	} else if c.SSOClientID != "" || c.SSOClientSecret != "" || c.SSORedirectURL != "" {
-		return errors.New("SSO_CLIENT_ID, SSO_CLIENT_SECRET and SSO_REDIRECT_URL must be configured together")
 	}
 	if c.JWTSecret == "" {
 		return errors.New("JWT_SECRET_KEY is required")
@@ -209,10 +212,14 @@ func (c Config) WebModels() []string {
 }
 
 
-func (c Config) SSOConfigured() bool {
+func (c Config) SSOSettingsComplete() bool {
 	return strings.TrimSpace(c.SSOClientID) != "" &&
 		strings.TrimSpace(c.SSOClientSecret) != "" &&
 		strings.TrimSpace(c.SSORedirectURL) != ""
+}
+
+func (c Config) SSOConfigured() bool {
+	return strings.EqualFold(strings.TrimSpace(c.AuthMode), "sso") && c.SSOSettingsComplete()
 }
 
 func (c Config) IsSSOAdmin(account string) bool {
@@ -292,39 +299,3 @@ func envInt(key string, fallback int) int {
 	return n
 }
 
-func normalizeMySQLDSN(value string) (string, error) {
-	if value == "" {
-		return "", nil
-	}
-	value = strings.TrimSpace(value)
-	if !strings.HasPrefix(value, "mysql+pymysql://") && !strings.HasPrefix(value, "mysql://") {
-		return value, nil
-	}
-
-	normalized := strings.TrimPrefix(value, "mysql+pymysql://")
-	normalized = strings.TrimPrefix(normalized, "mysql://")
-	u, err := url.Parse("mysql://" + normalized)
-	if err != nil {
-		return "", fmt.Errorf("parse DATABASE_URL: %w", err)
-	}
-	if u.User == nil || u.Hostname() == "" {
-		return "", errors.New("DATABASE_URL must include username and host")
-	}
-	username := u.User.Username()
-	password, _ := u.User.Password()
-	host := u.Host
-	if u.Port() == "" {
-		host += ":3306"
-	}
-	database := strings.TrimPrefix(u.Path, "/")
-	if database == "" {
-		return "", errors.New("DATABASE_URL must include a database name")
-	}
-	query := u.Query()
-	query.Set("parseTime", "true")
-	query.Set("loc", "Local")
-	if query.Get("charset") == "" {
-		query.Set("charset", "utf8mb4")
-	}
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s?%s", username, password, host, database, query.Encode()), nil
-}

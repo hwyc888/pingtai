@@ -3,50 +3,24 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
-	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"pingtai/internal/config"
 	"pingtai/internal/setup"
 )
 
-// Opt in with a disposable MySQL instance; this test creates and drops its own schema.
+// This integration test uses an isolated SQLite file and a local mock model provider.
 func TestWebSetupRestartIntegration(t *testing.T) {
-	dsn := os.Getenv("PINGTAI_TEST_MYSQL_DSN")
-	if dsn == "" {
-		t.Skip("set PINGTAI_TEST_MYSQL_DSN to run the real MySQL setup/restart integration test")
-	}
-	connection, err := mysql.ParseDSN(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection.DBName = ""
-	db, err := sql.Open("mysql", connection.FormatDSN())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	databaseName := fmt.Sprintf("pingtai_setup_test_%d", time.Now().UnixNano())
-	if _, err := db.Exec("CREATE DATABASE " + databaseName + " CHARACTER SET utf8mb4"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if _, err := db.Exec("DROP DATABASE " + databaseName); err != nil {
-			t.Error(err)
-		}
-	}()
+	sqlitePath := filepath.Join(t.TempDir(), "data", "pingtai.db")
+	t.Setenv("PINGTAI_DB_PATH", filepath.Join(t.TempDir(), "stale-environment.db"))
 	t.Setenv("PINGTAI_CONFIG_FILE", filepath.Join(t.TempDir(), "pingtai-config.json"))
 
 	upstreamRequests := make(chan map[string]any, 16)
@@ -72,27 +46,24 @@ func TestWebSetupRestartIntegration(t *testing.T) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"restart-ok"}}]}`)
 	}))
 	defer upstream.Close()
-	host, port, err := net.SplitHostPort(connection.Addr)
-	if err != nil {
-		t.Fatal(err)
-	}
 	requestBody := map[string]any{
 		"Settings": map[string]any{
 			"Addr": ":5051", "OpenAIBaseURL": upstream.URL + "/v1", "OpenAIAPIKey": "verification-upstream-key",
 			"OpenAIModel": "verification-model", "ModelAPIKey": "verification-proxy-key",
 			"OpenAIModels":       []string{"verification-model", "second-model"},
-			"OpenAISystemPrompt": "remember the conversation", "ContextTurns": 1,
+			"OpenAISystemPrompt": "remember the conversation", "ContextTurns": 1, "DatabasePath": sqlitePath,
 		},
-		"Database":      map[string]any{"Host": host, "Port": port, "Username": connection.User, "Password": connection.Passwd, "Name": databaseName},
 		"AdminUsername": "setupadmin", "AdminPassword": "verification-admin-password",
 	}
-	bootstrap := setup.New(config.Defaults(), nil)
+	initial := config.Defaults()
+	initial.DatabasePath = sqlitePath
+	bootstrap := setup.New(initial, nil)
 	response := sendSetupRequest(t, bootstrap, requestBody, bootstrap.BootstrapToken(), "", "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("initial web save: %d %s", response.Code, response.Body.String())
 	}
 	// Simulate a fresh process reading saved configuration in the presence of stale environment values.
-	t.Setenv("MYSQL_DSN", "invalid-environment-value")
+	t.Setenv("PINGTAI_DB_PATH", filepath.Join(t.TempDir(), "invalid-environment.db"))
 	t.Setenv("JWT_SECRET_KEY", "invalid-environment-secret")
 	saved, err := config.Load()
 	if err != nil || saved.Addr != ":5051" || len(saved.JWTSecret) < 32 {

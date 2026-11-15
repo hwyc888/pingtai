@@ -1,33 +1,30 @@
 CREATE TABLE IF NOT EXISTS ai_conversation (
-  id VARCHAR(64) NOT NULL,
-  user_id VARCHAR(50) NOT NULL,
-  bot_id VARCHAR(128) NOT NULL DEFAULT '',
+  id TEXT NOT NULL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  bot_id TEXT NOT NULL DEFAULT '',
   created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL,
-  PRIMARY KEY (id),
-  KEY idx_ai_conversation_user (user_id, updated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  updated_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_conversation_user ON ai_conversation(user_id, updated_at);
 
 CREATE TABLE IF NOT EXISTS ai_chat (
-  id VARCHAR(64) NOT NULL,
-  conversation_id VARCHAR(64) NOT NULL,
-  status VARCHAR(32) NOT NULL,
+  id TEXT NOT NULL PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  status TEXT NOT NULL,
   error_message TEXT,
   created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL,
-  PRIMARY KEY (id),
-  KEY idx_ai_chat_conversation (conversation_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  updated_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_conversation ON ai_chat(conversation_id, created_at);
 
 CREATE TABLE IF NOT EXISTS ai_message (
-  id BIGINT NOT NULL AUTO_INCREMENT,
-  conversation_id VARCHAR(64) NOT NULL,
-  chat_id VARCHAR(64) NOT NULL DEFAULT '',
-  role VARCHAR(32) NOT NULL,
-  content LONGTEXT NOT NULL,
-  reasoning_content LONGTEXT,
-  created_at DATETIME NOT NULL,
-  PRIMARY KEY (id),
-  KEY idx_ai_message_conversation (conversation_id, id),
-  KEY idx_ai_message_chat (chat_id, id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  reasoning_content TEXT,
+  created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_message_conversation ON ai_message(conversation_id, id);
+CREATE INDEX IF NOT EXISTS idx_ai_message_chat ON ai_message(chat_id, id);
