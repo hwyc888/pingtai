@@ -335,3 +335,7 @@ button:disabled { cursor: not-allowed; }
   .knowledge-upload { align-items: stretch; flex-direction: column; }
   .knowledge-upload span { white-space: normal; }
 }
+
+/* Use the same platform AI mark in the header, welcome state and assistant messages. */
+.assistant-avatar { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 13px; background: linear-gradient(135deg,#586bff 0%,#8b5cf6 100%); box-shadow: 0 8px 22px rgba(91,103,245,.18); }
+.assistant-avatar-mark { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.5px; line-height: 1; }

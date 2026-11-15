@@ -4,10 +4,6 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { clearAuth } from '../auth'
 import { copy } from '../copy'
-import assistantAvatar from '../../assets/ai-RKIJCCzP.png'
-import deepIcon from '../../assets/deep-Cjqy5X0s.png'
-import gptIcon from '../../assets/gpt-CnQrq-fq.png'
-import tongyiIcon from '../../assets/tongyi-Dqrkk6Z-.png'
 
 const router = useRouter()
 const username = ref(localStorage.getItem('username') || '\u7528\u6237')
@@ -320,7 +316,7 @@ onBeforeUnmount(() => {
           <div class="user-bubble">{{ message.content }}</div>
         </template>
         <template v-else>
-          <div class="assistant-avatar"><img :src="assistantAvatar" alt="AI" /></div>
+          <div class="assistant-avatar"><span class="assistant-avatar-mark">AI</span></div>
           <div class="assistant-card">
             <div class="assistant-status">
               <span class="status-dot" :class="{ busy: message.pending }"></span>
