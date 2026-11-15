@@ -198,3 +198,68 @@ func browserAddress(address string) string {
 	}
 	return "http://" + net.JoinHostPort(host, port)
 }
+
+func importLegacyProvider(ctx context.Context, cfg config.Config, providers *repository.ProviderRepository) error {
+	if cfg.ChatProvider != "openai" {
+		return nil
+	}
+	if _, _, err := providers.Active(ctx); err == nil {
+		return nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	existing, err := providers.List(ctx)
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	defaultModel := cfg.DefaultModel()
+	if defaultModel == "" {
+		return nil
+	}
+	baseURL := cfg.OpenAIBaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	timeout := int(cfg.OpenAITimeout.Seconds())
+	if timeout < 1 {
+		timeout = 180
+	}
+	id, err := providers.Save(ctx, model.Provider{
+		Name: "从旧环境配置迁移",
+		BaseURL: baseURL,
+		APIKey: cfg.OpenAIAPIKey,
+		Protocol: "openai",
+		DefaultModel: defaultModel,
+		MaxOutputTokens: cfg.OpenAIMaxTokens,
+		TimeoutSeconds: timeout,
+		SystemPrompt: cfg.OpenAISystemPrompt,
+	})
+	if err != nil {
+		return err
+	}
+	modelIDs := append([]string(nil), cfg.OpenAIModels...)
+	foundDefault := false
+	for _, modelID := range modelIDs {
+		if modelID == defaultModel {
+			foundDefault = true
+			break
+		}
+	}
+	if !foundDefault {
+		modelIDs = append([]string{defaultModel}, modelIDs...)
+	}
+	models := make([]model.ProviderModel, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if strings.TrimSpace(modelID) == "" {
+			continue
+		}
+		models = append(models, model.ProviderModel{ProviderID: id, ModelID: modelID, Enabled: true})
+	}
+	if err := providers.ReplaceModels(ctx, id, models); err != nil {
+		return err
+	}
+	return providers.Activate(ctx, id)
+}
