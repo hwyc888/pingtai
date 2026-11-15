@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
 
+	"pingtai/internal/contextbudget"
 	"pingtai/internal/model"
 	"pingtai/internal/util"
 )
@@ -151,6 +153,23 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "读取会话历史失败")
 		return
 	}
+
+	budget, err := contextbudget.Fit(
+		h.Config.SystemPrompt(), history, userContent,
+		h.Config.ModelContextTokens, h.Config.OpenAIMaxTokens,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
+			"code": http.StatusRequestEntityTooLarge,
+			"msg": "当前问题、附件和系统提示词已超过模型可用上下文预算，请缩短内容或移除附件后重试",
+		})
+		return
+	}
+	if budget.DroppedTurns > 0 {
+		log.Printf("context budget: model=%s window=%d input=%d kept_turns=%d dropped_turns=%d",
+			selectedModel, budget.ContextWindowTokens, budget.EstimatedInputTokens,
+			budget.KeptTurns, budget.DroppedTurns)
+	}
 	chatID, err := util.NewID()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "生成聊天ID失败")
@@ -174,12 +193,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	messages := make([]map[string]any, 0, len(history)+2)
-	if prompt := h.Config.SystemPrompt(); prompt != "" {
-		messages = append(messages, map[string]any{"role": "system", "content": prompt})
-	}
-	messages = append(messages, history...)
-	messages = append(messages, map[string]any{"role": "user", "content": userContent})
+	messages := budget.Messages
 
 	payload := map[string]any{
 		"model":    selectedModel,
@@ -187,7 +201,16 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		"stream":   false,
 	}
 	if h.Config.ChatProvider == "openai" && h.Config.OpenAIMaxTokens > 0 {
-		payload["max_tokens"] = h.Config.OpenAIMaxTokens
+		outputLimit := int64(h.Config.OpenAIMaxTokens)
+		if budget.AllowedOutputTokens > 0 && budget.AllowedOutputTokens < outputLimit {
+			outputLimit = budget.AllowedOutputTokens
+		}
+		if outputLimit < 1 {
+			_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", "model context has no output token budget")
+			writeError(w, http.StatusRequestEntityTooLarge, "当前上下文已占满模型窗口，请缩短历史内容后重试")
+			return
+		}
+		payload["max_tokens"] = int(outputLimit)
 	}
 	body, status, callErr := h.Model.Complete(r.Context(), payload)
 	if callErr != nil || status < 200 || status >= 300 {

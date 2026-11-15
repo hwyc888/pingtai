@@ -159,6 +159,48 @@ async function discoverModels() {
   }
 }
 
+async function testConnection() {
+  if (!selectedProviderId.value) {
+    errorMessage.value = '请先保存供应商，再测试连接。'
+    return
+  }
+  saving.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const result = assertProviderResponse(await api.post('/admin/providers/test', { id: selectedProviderId.value }))
+    const data = result.data || {}
+    successMessage.value = '连接成功：HTTP ' + data.status_code + '，延迟 ' + data.latency_ms + ' ms，上游返回 ' + data.model_count + ' 个模型。'
+  } catch (error) {
+    errorMessage.value = error?.message || '供应商连接测试失败'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function testModel() {
+  if (!selectedProviderId.value || !providerForm.value.default_model) {
+    errorMessage.value = '请先选择一个默认模型。'
+    return
+  }
+  if (!window.confirm('将向上游发送一条简短测试请求，最多请求 8 个输出 Token，可能产生少量 API 费用。是否继续？')) return
+  saving.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    const result = assertProviderResponse(await api.post('/admin/providers/test-model', {
+      id: selectedProviderId.value,
+      model_id: providerForm.value.default_model,
+    }))
+    const data = result.data || {}
+    successMessage.value = '模型调用成功：' + data.model_id + '，延迟 ' + data.latency_ms + ' ms。返回：' + (data.response_preview || '（无文本预览）')
+  } catch (error) {
+    errorMessage.value = error?.message || '模型可用性测试失败'
+  } finally {
+    saving.value = false
+  }
+}
+
 async function saveModelMetadata(model) {
   saving.value = true
   errorMessage.value = ''
@@ -339,7 +381,9 @@ onMounted(load)
             </div>
             <div class="provider-actions">
               <button class="admin-primary" type="button" :disabled="saving" @click="saveProvider">保存供应商</button>
+              <button class="admin-secondary" type="button" :disabled="saving || !selectedProviderId" @click="testConnection">测试连接</button>
               <button class="admin-secondary" type="button" :disabled="saving || !selectedProviderId" @click="discoverModels">自动获取模型</button>
+              <button class="admin-secondary" type="button" :disabled="saving || !selectedProviderId || !providerForm.default_model" @click="testModel">测试默认模型</button>
               <button class="admin-primary" type="button" :disabled="saving || !selectedProviderId" @click="activateProvider">设为默认供应商</button>
               <button class="admin-text-button danger" type="button" :disabled="saving || !selectedProviderId" @click="deleteProvider">删除</button>
             </div>

@@ -124,7 +124,7 @@ func (r *ChatRepository) ContextMessages(ctx context.Context, conversationID str
 		completedChats += " LIMIT ?"
 		arguments = append(arguments, turns)
 	}
-	query := "SELECT m.role,m.content,p.content_json FROM ai_message m " +
+	query := "SELECT m.chat_id,m.role,m.content,p.content_json FROM ai_message m " +
 		"INNER JOIN (" + completedChats + ") c ON c.id=m.chat_id " +
 		"LEFT JOIN ai_message_context p ON p.message_id=m.id " +
 		"WHERE m.role IN ('user','assistant') ORDER BY m.id ASC"
@@ -135,16 +135,16 @@ func (r *ChatRepository) ContextMessages(ctx context.Context, conversationID str
 	defer rows.Close()
 	messages := make([]map[string]any, 0)
 	for rows.Next() {
-		var role, text string
+		var turnID, role, text string
 		var encoded sql.NullString
-		if err := rows.Scan(&role, &text, &encoded); err != nil {
+		if err := rows.Scan(&turnID, &role, &text, &encoded); err != nil {
 			return nil, err
 		}
 		var content any = text
 		if encoded.Valid && json.Valid([]byte(encoded.String)) {
 			content = json.RawMessage(encoded.String)
 		}
-		messages = append(messages, map[string]any{"role": role, "content": content})
+		messages = append(messages, map[string]any{"turn_id": turnID, "role": role, "content": content})
 	}
 	return messages, rows.Err()
 }

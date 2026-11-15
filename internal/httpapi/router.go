@@ -59,6 +59,8 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("POST /admin/providers/activate", admin(http.HandlerFunc(h.ActivateProvider)))
 	api.Handle("POST /admin/providers/discover", admin(http.HandlerFunc(h.DiscoverProviderModels)))
 	api.Handle("POST /admin/providers/models/update", admin(http.HandlerFunc(h.UpdateProviderModel)))
+	api.Handle("POST /admin/providers/test", admin(http.HandlerFunc(h.TestProviderConnection)))
+	api.Handle("POST /admin/providers/test-model", admin(http.HandlerFunc(h.TestProviderModel)))
 
 	api.Handle("GET /agents/getAgentConfig", admin(http.HandlerFunc(h.GetAgentConfig)))
 	api.Handle("POST /agents/updateAgent", admin(http.HandlerFunc(h.UpdateAgent)))

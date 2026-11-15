@@ -149,6 +149,7 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		}
 	}
 	providers := repository.NewProviderRepository(db)
+	cfg.ModelContextTokens = 0
 	if active, models, providerErr := providers.Active(ctx); providerErr == nil {
 		cfg.ChatProvider = "openai"
 		cfg.OpenAIBaseURL = active.BaseURL
@@ -160,8 +161,13 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		cfg.OpenAIModels = make([]string, 0, len(models))
 		for _, item := range models {
 			cfg.OpenAIModels = append(cfg.OpenAIModels, item.ModelID)
-			if item.ModelID == active.DefaultModel && cfg.OpenAIMaxTokens == 0 && item.MaxOutputTokens != nil {
-				cfg.OpenAIMaxTokens = int(*item.MaxOutputTokens)
+			if item.ModelID == active.DefaultModel {
+				if item.ContextLength != nil {
+					cfg.ModelContextTokens = *item.ContextLength
+				}
+				if cfg.OpenAIMaxTokens == 0 && item.MaxOutputTokens != nil {
+					cfg.OpenAIMaxTokens = int(*item.MaxOutputTokens)
+				}
 			}
 		}
 	} else if !errors.Is(providerErr, sql.ErrNoRows) {

@@ -102,6 +102,16 @@ Choose an enabled default model and activate the provider. The active provider i
 
 Provider API keys are stored in the SQLite database file. The database is created with owner-only file permissions (0600) and the systemd example keeps it under `/var/lib/pingtai`, owned by the service account. Protect database backups as secrets.
 
+### Context-window budgeting
+
+When the active default model has a context length recorded in provider model metadata, built-in web chat uses a conservative token estimate to fit the system prompt, recent history and current message into that window. It reserves output capacity and a safety margin, then keeps the newest contiguous set of complete user/assistant turns. It never splits a turn or drops the current question. If the current message and system prompt alone exceed the available input budget, the request is rejected with HTTP 413 and the user is asked to shorten the content or remove an attachment.
+
+The estimator is intentionally model-agnostic: ASCII text is budgeted at roughly one token per three characters, CJK text at 1.5 tokens per character, and each image at a fixed 4,096-token reserve. This is a safety estimate, not the provider's exact tokenizer; actual image costs and tokenization vary by model. If the provider does not publish a context length, the platform does not invent one and continues to apply only the configured `CONTEXT_TURNS` limit. The configured output limit is reduced when necessary to fit the remaining known context window.
+
+### Provider diagnostics
+
+The administrator page offers two explicit checks. **Test connection** calls the provider's `/models` endpoint and reports HTTP status, latency and model count without saving changes. **Test default model** sends a short Chat Completions request capped at 8 output tokens; the confirmation dialog warns that the upstream may charge for this request. Neither check returns or logs the provider API key.
+
 ## Configuration
 
 SQLite is the only runtime database. The server creates `data/pingtai.db` automatically (or the configured `PINGTAI_DB_PATH`) and applies non-destructive `CREATE TABLE IF NOT EXISTS` migrations. SQLite runs in WAL mode with a busy timeout; the database file and its directory must be writable by the service account. Stop the service before taking a simple file copy backup so the WAL is checkpointed.

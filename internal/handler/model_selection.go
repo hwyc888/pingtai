@@ -12,14 +12,11 @@ func modelBotID(model string) string {
 	return fmt.Sprintf("openai-model-%x", sha256.Sum256([]byte(model)))
 }
 
+// Built-in web chat always uses the administrator-selected default model.
 func selectChatModel(cfg *config.Config, botID string) (string, bool) {
-	if cfg.ChatProvider != "openai" || botID == "openai-default" {
-		return cfg.DefaultModel(), true
-	}
-	for _, model := range cfg.WebModels() {
-		if modelBotID(model) == botID {
-			return model, true
-		}
+	defaultModel := cfg.DefaultModel()
+	if cfg.ChatProvider != "openai" || botID == "openai-default" || botID == modelBotID(defaultModel) {
+		return defaultModel, true
 	}
 	return "", false
 }

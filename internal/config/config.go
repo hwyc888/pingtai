@@ -32,6 +32,7 @@ type Config struct {
 	OpenAISystemPrompt string
 	OpenAITimeout      time.Duration
 	OpenAIMaxTokens    int
+	ModelContextTokens int64
 	ContextTurns       int
 	CozeBaseURL        string
 	CozeAccessToken    string
@@ -178,6 +179,9 @@ func (c Config) Validate() error {
 	}
 	if c.ChatProvider == "openai" && (c.OpenAITimeout <= 0 || c.OpenAIMaxTokens < 0) {
 		return errors.New("OpenAI timeout must be positive and maximum tokens must be zero or positive")
+	}
+	if c.ModelContextTokens < 0 {
+		return errors.New("model context tokens cannot be negative")
 	}
 	if c.ContextTurns < 0 || c.ContextTurns > 1000 {
 		return errors.New("context turns must be between 0 (all history) and 1000")

@@ -51,3 +51,12 @@ func TestLoadRejectsLegacyMySQLEnvironmentUntilMigrated(t *testing.T) {
 		t.Fatalf("expected explicit legacy database migration warning, got %v", err)
 	}
 }
+
+func TestModelContextTokensCannotBeNegative(t *testing.T) {
+	cfg := Defaults()
+	cfg.JWTSecret = strings.Repeat("s", 40)
+	cfg.ModelContextTokens = -1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("negative model context metadata must be rejected")
+	}
+}

@@ -4,43 +4,41 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"pingtai/internal/config"
 )
 
-func TestSelectedModelsAppearAsDistinctChatOptions(t *testing.T) {
+func TestBuiltInChatExposesOnlyAdministratorDefaultModel(t *testing.T) {
 	cfg := config.Defaults()
-	cfg.OpenAIModel = "provider/model-a"
-	cfg.OpenAIModels = []string{cfg.OpenAIModel, "provider/model-b", strings.Repeat("long-name-", 30)}
-	handler := &Handler{Config: &cfg}
+	cfg.OpenAIModel = "provider/model-b"
+	cfg.OpenAIModels = []string{"provider/model-a", "provider/model-b", "provider/model-c"}
+	app := &Handler{Config: &cfg}
 	response := httptest.NewRecorder()
-	handler.GetAgentsList(response, httptest.NewRequest(http.MethodGet, "/agents/getAgentsList?space_id=openai-workspace", nil))
+	app.GetAgentsList(response, httptest.NewRequest(http.MethodGet, "/agents/getAgentsList?space_id=openai-workspace", nil))
 	var result struct {
 		Data struct {
 			Bots []struct {
 				BotID string `json:"bot_id"`
 				Name  string `json:"name"`
 			} `json:"space_bots"`
-		}
+		} `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || len(result.Data.Bots) != 3 {
-		t.Fatalf("unexpected model options: %s", response.Body.String())
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
 	}
-	for index, bot := range result.Data.Bots {
-		model, allowed := selectChatModel(&cfg, bot.BotID)
-		if !allowed || model != cfg.OpenAIModels[index] || bot.Name != model || len(bot.BotID) > 128 {
-			t.Fatalf("model option did not resolve correctly: %#v", bot)
-		}
+	if len(result.Data.Bots) != 1 || result.Data.Bots[0].Name != cfg.OpenAIModel {
+		t.Fatalf("web chat should expose only the configured default model: %s", response.Body.String())
+	}
+	if model, allowed := selectChatModel(&cfg, result.Data.Bots[0].BotID); !allowed || model != cfg.OpenAIModel {
+		t.Fatal("the default model was not accepted")
+	}
+	if _, allowed := selectChatModel(&cfg, modelBotID("provider/model-a")); allowed {
+		t.Fatal("a non-default model must not be selectable from built-in web chat")
 	}
 	if model, allowed := selectChatModel(&cfg, "openai-default"); !allowed || model != cfg.OpenAIModel {
-		t.Fatal("legacy default option stopped working")
+		t.Fatal("legacy default bot ID should remain compatible")
 	}
-	if _, allowed := selectChatModel(&cfg, modelBotID("not-selected")); allowed {
-		t.Fatal("an unselected web model was accepted")
-	}
-	cfg.OpenAIModel = "provider/model-b"
 	if models := cfg.WebModels(); models[0] != cfg.OpenAIModel || cfg.OpenAIModels[0] != "provider/model-a" {
 		t.Fatal("default should be listed first without mutating saved model order")
 	}

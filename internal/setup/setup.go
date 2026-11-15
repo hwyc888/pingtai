@@ -209,7 +209,7 @@ func (h *Handler) buildCandidate(request saveRequest) (config.Config, error) {
 	var merged map[string]json.RawMessage
 	_ = json.Unmarshal(contents, &merged)
 	for key, value := range request.Settings {
-		if _, exists := merged[key]; !exists || key == "AccessTokenTTL" || key == "RefreshTokenTTL" {
+		if _, exists := merged[key]; !exists || key == "AccessTokenTTL" || key == "RefreshTokenTTL" || key == "ModelContextTokens" {
 			return config.Config{}, errors.New("Unknown or read-only configuration field.")
 		}
 		if string(value) == "null" {

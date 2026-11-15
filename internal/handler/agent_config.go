@@ -85,11 +85,11 @@ func (h *Handler) GetAgentsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Config.ChatProvider == "openai" {
-		bots := make([]map[string]any, 0)
-		for _, model := range h.Config.WebModels() {
+		bots := make([]map[string]any, 0, 1)
+		if model := h.Config.DefaultModel(); model != "" {
 			bots = append(bots, map[string]any{
 				"bot_id": modelBotID(model), "name": model,
-				"description": "OpenAI 兼容模型，支持多轮会话上下文",
+				"description": "平台默认模型，支持多轮会话上下文",
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
