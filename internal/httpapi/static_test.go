@@ -73,3 +73,35 @@ func TestEmbeddedFrontendIsServedWithoutExternalDirectory(t *testing.T) {
 		t.Fatalf("embedded SPA fallback: status=%d body=%q", route.Code, route.Body.String())
 	}
 }
+
+
+func TestAdminPageAndProviderAPIRoutesDoNotConflict(t *testing.T) {
+	root := http.NewServeMux()
+	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Route", "admin-api")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	frontend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Route", "frontend")
+		w.WriteHeader(http.StatusOK)
+	})
+	root.Handle("/admin/providers", api)
+	root.Handle("/admin/providers/", api)
+	root.Handle("/admin", frontend)
+	root.Handle("/admin/", frontend)
+
+	for _, path := range []string{"/admin", "/admin/"} {
+		response := httptest.NewRecorder()
+		root.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK || response.Header().Get("X-Route") != "frontend" {
+			t.Fatalf("admin UI route %s should serve frontend, got status=%d route=%q", path, response.Code, response.Header().Get("X-Route"))
+		}
+	}
+	for _, path := range []string{"/admin/providers", "/admin/providers/save"} {
+		response := httptest.NewRecorder()
+		root.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusNoContent || response.Header().Get("X-Route") != "admin-api" {
+			t.Fatalf("provider API route %s should reach API mux, got status=%d route=%q", path, response.Code, response.Header().Get("X-Route"))
+		}
+	}
+}
