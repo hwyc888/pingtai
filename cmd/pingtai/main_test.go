@@ -131,8 +131,8 @@ func TestWebSetupRestartIntegration(t *testing.T) {
 			} `json:"space_bots"`
 		}
 	}
-	if err := json.Unmarshal(listResponse.Body.Bytes(), &modelList); err != nil || len(modelList.Data.Bots) != 2 {
-		t.Fatalf("saved model selection not restored: %s", listResponse.Body.String())
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &modelList); err != nil || len(modelList.Data.Bots) != 1 || modelList.Data.Bots[0].Name != "verification-model" {
+		t.Fatalf("platform default model was not restored as the only web chat option: %s", listResponse.Body.String())
 	}
 	modelRequest := httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"hello"}]}`))
 	modelRequest.Header.Set("Content-Type", "application/json")
