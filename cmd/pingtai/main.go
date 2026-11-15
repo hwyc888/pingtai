@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"pingtai/internal/database"
 	"pingtai/internal/handler"
 	"pingtai/internal/httpapi"
+	"pingtai/internal/model"
 	"pingtai/internal/repository"
 	authservice "pingtai/internal/service/auth"
 	"pingtai/internal/service/coze"
@@ -149,8 +151,14 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		}
 	}
 	providers := repository.NewProviderRepository(db)
+	if err := importLegacyProvider(ctx, cfg, providers); err != nil {
+		cleanup()
+		return nil, nil, nil, errors.New("cannot migrate legacy AI provider configuration")
+	}
+	providerManaged := false
 	cfg.ModelContextTokens = 0
 	if active, models, providerErr := providers.Active(ctx); providerErr == nil {
+		providerManaged = true
 		cfg.ChatProvider = "openai"
 		cfg.OpenAIBaseURL = active.BaseURL
 		cfg.OpenAIAPIKey = active.APIKey
@@ -182,7 +190,72 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 		modelClient = openai.NewClient(cfg)
 	}
 	appHandler := handler.New(&cfg, db, users, chats, auth, coze.NewClient(cfg), modelClient)
-	return httpapi.NewRouter(&cfg, appHandler), setup.New(cfg, auth), cleanup, nil
+	return httpapi.NewRouter(&cfg, appHandler), setup.NewWithProviderState(cfg, auth, providerManaged), cleanup, nil
+}
+
+func importLegacyProvider(ctx context.Context, cfg config.Config, providers *repository.ProviderRepository) error {
+	if cfg.ChatProvider != "openai" {
+		return nil
+	}
+	if _, _, err := providers.Active(ctx); err == nil {
+		return nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	existing, err := providers.List(ctx)
+	if err != nil {
+		return err
+	}
+	if len(existing) > 0 {
+		return nil
+	}
+	defaultModel := cfg.DefaultModel()
+	if defaultModel == "" {
+		return nil
+	}
+	baseURL := cfg.OpenAIBaseURL
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	timeout := int(cfg.OpenAITimeout.Seconds())
+	if timeout < 1 {
+		timeout = 180
+	}
+	id, err := providers.Save(ctx, model.Provider{
+		Name: "从初始化配置迁移",
+		BaseURL: baseURL,
+		APIKey: cfg.OpenAIAPIKey,
+		Protocol: "openai",
+		DefaultModel: defaultModel,
+		MaxOutputTokens: cfg.OpenAIMaxTokens,
+		TimeoutSeconds: timeout,
+		SystemPrompt: cfg.OpenAISystemPrompt,
+	})
+	if err != nil {
+		return err
+	}
+	modelIDs := append([]string(nil), cfg.OpenAIModels...)
+	foundDefault := false
+	for _, modelID := range modelIDs {
+		if modelID == defaultModel {
+			foundDefault = true
+			break
+		}
+	}
+	if !foundDefault {
+		modelIDs = append([]string{defaultModel}, modelIDs...)
+	}
+	models := make([]model.ProviderModel, 0, len(modelIDs))
+	for _, modelID := range modelIDs {
+		if strings.TrimSpace(modelID) == "" {
+			continue
+		}
+		models = append(models, model.ProviderModel{ProviderID: id, ModelID: modelID, Enabled: true})
+	}
+	if err := providers.ReplaceModels(ctx, id, models); err != nil {
+		return err
+	}
+	return providers.Activate(ctx, id)
 }
 
 func browserAddress(address string) string {

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+import BrandMark from '../components/BrandMark.vue'
 import { clearAuth } from '../auth'
 import { copy } from '../copy'
 
@@ -297,7 +298,7 @@ onBeforeUnmount(() => {
     <header class="chat-header">
       <button class="icon-button" type="button" :aria-label="copy.history" @click="showHistoryDrawer = true">&#9776;</button>
       <div class="chat-header-title">
-        <span class="header-mark">AI</span>
+        <BrandMark class="header-mark" />
         <span>{{ copy.newChat }}</span>
       </div>
       <button class="icon-button new-chat-button" type="button" :aria-label="copy.startNewChat" :disabled="isSending" @click="startNewConversation">+</button>
@@ -305,7 +306,7 @@ onBeforeUnmount(() => {
 
     <section ref="messageList" class="message-list" aria-live="polite">
       <div v-if="!messages.length && !isLoading" class="welcome-panel">
-        <div class="welcome-mark">AI</div>
+        <BrandMark class="welcome-mark" />
         <h1>{{ copy.emptyTitle }}</h1>
         <p>{{ copy.emptyDescription }}</p>
       </div>
@@ -316,7 +317,7 @@ onBeforeUnmount(() => {
           <div class="user-bubble">{{ message.content }}</div>
         </template>
         <template v-else>
-          <div class="assistant-avatar"><span class="assistant-avatar-mark">AI</span></div>
+          <BrandMark class="assistant-avatar" />
           <div class="assistant-card">
             <div class="assistant-status">
               <span class="status-dot" :class="{ busy: message.pending }"></span>
@@ -374,6 +375,7 @@ onBeforeUnmount(() => {
         <footer class="drawer-user">
           <span class="user-avatar">{{ usernameInitial }}</span>
           <strong>{{ username }}</strong>
+          <button v-if="isAdmin" type="button" @click="router.push('/knowledge')">知识库管理</button>
           <button v-if="isAdmin" type="button" @click="router.push('/admin')">管理后台</button>
           <button type="button" @click="logout">{{ copy.logout }}</button>
         </footer>

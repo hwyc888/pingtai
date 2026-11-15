@@ -36,11 +36,16 @@ type Handler struct {
 	auth    *authservice.Service
 	token   string
 	pending bool
+	providerManaged bool
 	prepare func(context.Context, config.Config, string, string) error
 }
 
 func New(current config.Config, auth *authservice.Service) *Handler {
-	return &Handler{current: current, auth: auth, token: rand.Text(), prepare: prepareDatabase}
+	return NewWithProviderState(current, auth, false)
+}
+
+func NewWithProviderState(current config.Config, auth *authservice.Service, providerManaged bool) *Handler {
+	return &Handler{current: current, auth: auth, token: rand.Text(), providerManaged: providerManaged, prepare: prepareDatabase}
 }
 
 func (h *Handler) BootstrapToken() string {
@@ -66,7 +71,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/setup/status" && r.Method == http.MethodGet {
-		h.respond(w, http.StatusOK, map[string]any{"bootstrap": h.auth == nil, "sso_enabled": h.current.SSOConfigured()})
+		h.respond(w, http.StatusOK, map[string]any{
+			"bootstrap": h.auth == nil,
+			"sso_enabled": h.current.SSOConfigured(),
+			"provider_managed": h.providerManaged,
+		})
 		return
 	}
 	if r.URL.Path != "/setup/api" && r.URL.Path != "/setup/models" {

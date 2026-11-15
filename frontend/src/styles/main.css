@@ -323,7 +323,7 @@ button:disabled { cursor: not-allowed; }
 .knowledge-upload span { min-width: 0; flex: 1; overflow: hidden; color: #8a92a8; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-file-picker { position: relative; overflow: hidden; padding: 9px 12px; border-radius: 9px; color: #4c5ed0; font-size: 11px; font-weight: 700; background: #e9edff; cursor: pointer; }
 .knowledge-file-picker input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
-.knowledge-empty-icon { display: grid; width: 52px; height: 52px; place-items: center; margin: 0 auto 12px; border-radius: 15px; color: #5265dd; font-size: 24px; background: #eef0ff; }
+.knowledge-empty-icon { display: grid; width: 52px; height: 52px; place-items: center; margin: 0 auto 12px; border-radius: 15px; color: #fff; font-size: 17px; background: linear-gradient(145deg,#5673ff,#8d65ff); box-shadow: 0 9px 22px rgba(65,86,231,.2); }
 .knowledge-unavailable { max-width: 760px; margin: 50px auto; text-align: center; }
 .knowledge-unavailable h2 { margin: 0 0 10px; font-size: 18px; }
 .knowledge-unavailable p { max-width: 580px; margin: 8px auto; color: #858da4; font-size: 12px; line-height: 1.8; }

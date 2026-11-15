@@ -31,11 +31,11 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 2. Double-click start.bat.
 3. The browser opens automatically. No Notepad or command-line configuration is needed.
 4. In the web wizard, keep the default local account mode or select school SSO. In local mode, create the initial administrator username and password.
-5. If SSO is selected, configure the OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). Configure the model service settings. A JWT signing secret is generated automatically when left blank.
+5. If SSO is selected, configure the OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). A JWT signing secret is generated automatically when left blank. The first-run wizard can accept a legacy OpenAI-compatible model configuration; it is imported into SQLite provider management on the next startup.
 6. Set the SQLite database file path if needed. The server creates the directory and database file, initializes tables, and writes pingtai-config.json next to the executable. No MySQL server or database account is required.
 7. Stop the current server (Ctrl+C or close its window), then double-click start.bat again. The saved configuration is loaded and the normal frontend opens.
 
-The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and authenticate using the currently selected login mode (local administrator account or school SSO administrator account). Save and restart again to apply changes. If you change the listening port, use the new port after restart.
+The console window is only for service logs and shutdown, not configuration. After startup, manage AI providers, API keys, discovered models and the default model at /admin. Use /setup only for login authentication, SQLite path, listening address and system-level settings; these changes require a restart. If you change the listening port, use the new port after restart.
 
 The EXE serves the embedded frontend directly. No frontend/ folder is required.
 
@@ -118,7 +118,7 @@ SQLite is the only runtime database. The server creates `data/pingtai.db` automa
 
 ### Generic OpenAI-compatible service (recommended)
 
-Open /setup and choose chat provider `openai`. Enter the upstream Base URL and upstream API key, then click the model-discovery button. Select one or more models with the checkboxes and choose a default model from the dropdown. Save and restart. These fields are independent of the legacy CTYun settings; existing saved CTYun/Coze deployments keep their current provider until you change it.
+Open /admin and add an OpenAI-compatible provider. Enter the upstream Base URL and API key, save it, then discover models. Select the enabled models and choose a default model. Activate the provider and restart the service. The first-run OpenAI settings are imported automatically into this same provider list, so later model changes have one source of truth. Legacy CTYun/Coze deployments keep their existing configuration until migrated.
 
 Model discovery uses the current form's Base URL and key, without saving settings or requiring a database connection. A blank API key preserves the saved key; the explicit clear checkbox sends the discovery request without a key. Discovery requires the same setup key/administrator verification as configuration changes. It queries the upstream /models endpoint, has a 20-second timeout and accepts up to 4 MB of model-list JSON. If unsupported or denied, the page reports the failure without clearing your existing selections. You can manually add model IDs (one per line or comma-separated). The list also supports search, select-all and deselect-all; select-all includes all loaded models, not just the search results. Returned models may include non-chat models; only select models your provider supports for Chat Completions.
 
@@ -208,3 +208,8 @@ For the optional official Python SDK interoperability test, set PINGTAI_TEST_PYT
 ## Security
 
 Do not commit or share .env or pingtai-config.json. They contain JWT signing secrets, SSO client secrets and model API keys. The release ZIP only contains .env.example and never includes saved configuration or private setup links.
+
+
+## Knowledge base versions
+
+Knowledge documents are stored and indexed by the configured Coze knowledge service. The platform can publish version records for a dataset after all its documents finish processing. Each version records the document list, processing state, publisher and release note at that time. The original files and search index remain in Coze; these records are an audit snapshot, not a binary backup or one-click rollback. OpenAI-compatible chat requests do not automatically query Coze datasets; associate a dataset with a Coze agent when using the Coze agent chat path.

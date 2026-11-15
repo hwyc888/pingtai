@@ -31,10 +31,12 @@ button{font:inherit;border:0;border-radius:8px;padding:12px 21px;background:#256
 </form></section>
 <form id="configuration" hidden>
 <div class="note">&#23494;&#30721;&#21644;&#23494;&#38053;&#19981;&#20250;&#26174;&#31034;&#24050;&#20445;&#23384;&#30340;&#21407;&#25991;&#12290;&#30041;&#31354;&#20445;&#30041;&#21407;&#20540;&#65307;&#38656;&#35201;&#21024;&#38500;&#26102;&#21246;&#36873;&#8220;&#28165;&#31354;&#24050;&#20445;&#23384;&#20540;&#8221;&#12290;JWT &#23494;&#38053;&#30041;&#31354;&#26102;&#33258;&#21160;&#29983;&#25104;&#12290;</div>
+<div id="provider-managed-note" class="note" hidden>AI &#27169;&#22411;&#37197;&#32622;&#24050;&#32479;&#19968;&#36801;&#31227;&#21040;&#31649;&#29702;&#21518;&#21488;&#12290;&#20197;&#21518;&#35831;&#21040; /admin &#20462;&#25913;&#20379;&#24212;&#21830;&#12289; API Key &#21644;&#40664;&#35748;&#27169;&#22411;&#65307;&#26412;&#39029;&#21482;&#36127;&#36131;&#30331;&#24405;&#35748;&#35777;&#21644;&#31995;&#32479;&#37197;&#32622;&#65292;&#36991;&#20813;&#37325;&#22797;&#20462;&#25913;&#12290;</div>
 <section class="card"><h2>1. &#26381;&#21153;&#35774;&#32622;</h2><div class="grid" id="server-fields"></div></section>
 <section class="card" id="sso-card"><h2>&#23398;&#26657;&#32479;&#19968;&#36523;&#20221;&#35748;&#35777; (OAuth2)</h2><p>&#22635;&#20889;&#23398;&#26657;&#25552;&#20379;&#30340; client_id&#12289;client_secret &#21644;&#22312;&#32479;&#19968;&#36523;&#20221;&#35748;&#35777;&#24179;&#21488;&#27880;&#20876;&#30340;&#23436;&#25972;&#22238;&#35843;&#22320;&#22336;&#12290;&#31649;&#29702;&#21592;&#36134;&#21495;&#20351;&#29992;&#23398;&#26657;&#32479;&#19968;&#35748;&#35777;&#30340;&#36134;&#21495;&#26631;&#35782;&#65292;&#22810;&#20010;&#36134;&#21495;&#29992;&#33519;&#21495;&#12289;&#20998;&#21495;&#25110;&#25442;&#34892;&#20998;&#38548;&#12290;</p><div class="grid" id="sso-fields" style="margin-top:18px"></div></section>
 <section class="card"><h2>2. SQLite &#25968;&#25454;&#24211;</h2><p>&#31995;&#32479;&#20250;&#33258;&#21160;&#21019;&#24314; SQLite &#25968;&#25454;&#24211;&#25991;&#20214;&#12290;&#26080;&#38656;&#23433;&#35013; MySQL&#12290;&#35831;&#22312;&#19978;&#26041;&#25351;&#23450;&#25968;&#25454;&#24211;&#25991;&#20214;&#36335;&#24452;&#65292;&#30830;&#20445;&#36816;&#34892;&#29992;&#25143;&#26377;&#35835;&#20889;&#26435;&#38480;&#12290;</p></section>
 <section class="card"><h2>3. &#26412;&#22320;&#31649;&#29702;&#21592;&#65288;&#20165;&#26087;&#30331;&#24405;&#27169;&#24335;&#20351;&#29992;&#65289;</h2><p>&#20165;&#22312;&#19981;&#21551;&#29992;&#23398;&#26657; SSO &#30340;&#26087;&#27169;&#24335;&#38656;&#35201;&#21021;&#22987;&#31649;&#29702;&#21592;&#12290;&#21551;&#29992; SSO &#21518;&#65292;&#31649;&#29702;&#21592;&#26435;&#38480;&#30001;&#19978;&#26041;&#30340; SSO &#31649;&#29702;&#21592;&#36134;&#21495;&#30333;&#21517;&#21333;&#25511;&#21046;&#12290;</p><div class="grid" id="local-admin-fields" style="margin-top:18px"><div class="field"><label for="admin-username">&#31649;&#29702;&#21592;&#36134;&#21495;</label><input id="admin-username" value="admin" maxlength="50" autocomplete="off"></div><div class="field"><label for="admin-password">&#21021;&#22987;&#23494;&#30721;&#65288;8-72 &#23383;&#33410;&#65289;</label><input id="admin-password" type="password" autocomplete="new-password"></div><div class="field"><label for="admin-confirm">&#30830;&#35748;&#21021;&#22987;&#23494;&#30721;</label><input id="admin-confirm" type="password" autocomplete="new-password"></div></div></section>
+<div id="legacy-model-settings">
 <section class="card"><h2>4. OpenAI &#20860;&#23481;&#25509;&#21475;</h2><p>Base URL &#21487;&#22635; https://api.openai.com/v1 &#25110;&#20854;&#20182;&#20860;&#23481;&#26381;&#21153;&#30340;&#22522;&#30784;&#22320;&#22336;&#65292;&#20063;&#21487;&#22635;&#23436;&#25972; /chat/completions &#22320;&#22336;&#12290;&#26412;&#22320;&#26080;&#35748;&#35777;&#26381;&#21153;&#21487;&#30041;&#31354; API Key&#12290;&#27169;&#22411;&#33021;&#21147;&#21462;&#20915;&#20110;&#19978;&#28216;&#12290;</p><div class="grid" id="model-fields" style="margin-top:18px"></div></section>
 <section class="card"><h2>OpenAI &#27169;&#22411;&#33719;&#21462;&#19982;&#22810;&#36873;</h2>
 <p>&#20808;&#22635;&#19978;&#26041; Base URL &#21644; API Key&#65292;&#20877;&#33719;&#21462;&#27169;&#22411;&#12290;&#21246;&#36873;&#30340;&#27169;&#22411;&#20250;&#26174;&#31034;&#22312;&#32842;&#22825;&#39029;&#30340;&#27169;&#22411;/&#26234;&#33021;&#20307;&#36873;&#25321;&#21015;&#34920;&#12290;&#36825;&#26159;&#21487;&#20999;&#25442;&#30340;&#22810;&#20010;&#27169;&#22411;&#65292;&#19981;&#26159;&#19968;&#27425;&#21521;&#22810;&#20010;&#27169;&#22411;&#21516;&#26102;&#25552;&#38382;&#12290;</p>
@@ -47,6 +49,7 @@ button{font:inherit;border:0;border-radius:8px;padding:12px 21px;background:#256
 <section class="card"><details><summary>&#21407;&#22825;&#32764;&#20113;&#37197;&#32622;&#65288;ctyun &#27169;&#24335;&#65289;</summary><div class="grid" id="ctyun-fields"></div><details style="margin-top:22px"><summary>&#22825;&#32764;&#20113;&#31614;&#21517;&#35748;&#35777;&#35774;&#32622;&#65288;signature &#27169;&#24335;&#65289;</summary><div class="grid" id="signature-fields"></div></details></details></section>
 <section class="card"><details><summary>Coze &#37197;&#32622;&#65288;&#26234;&#33021;&#20307;&#12289;&#30693;&#35782;&#24211;&#21151;&#33021;&#38656;&#35201;&#65289;</summary><div class="grid" id="coze-fields"></div></details></section>
 <section class="card"><details><summary>&#39640;&#32423;&#35774;&#32622;</summary><div class="grid" id="advanced-fields"></div></details></section>
+</div>
 <section class="card"><div class="actions"><button id="save" type="submit">&#39564;&#35777;&#24182;&#20445;&#23384;&#37197;&#32622;</button><span class="hint">&#20445;&#23384;&#21518;&#35831;&#37325;&#21551;&#26381;&#21153;&#65292;&#19981;&#20250;&#22312;&#24403;&#21069;&#36827;&#31243;&#20013;&#28909;&#26356;&#26032;&#12290;</span></div><p class="hint" id="storage"></p></section>
 </form>
 <section id="finished" class="card" hidden><h2>&#19979;&#19968;&#27493;&#65306;&#37325;&#21551;&#26381;&#21153;</h2><p>Windows&#65306;&#20851;&#38381;&#24403;&#21069;&#26381;&#21153;&#31383;&#21475;&#65292;&#37325;&#26032;&#21452;&#20987; start.bat&#12290;<br>Linux/systemd&#65306;&#37325;&#21551; pingtai &#26381;&#21153;&#65288;systemctl restart pingtai&#65289;&#12290;<br>&#37325;&#21551;&#21518;&#65292;&#25353;&#20445;&#23384;&#30340;&#31471;&#21475;&#25171;&#24320;&#39318;&#39029;&#24182;&#20351;&#29992;&#31649;&#29702;&#21592;&#36134;&#21495;&#30331;&#24405;&#12290;<br>&#20197;&#21518;&#21487;&#35775;&#38382; /setup &#20462;&#25913;&#37197;&#32622;&#12290;</p><a href="/">&#37325;&#21551;&#21518;&#36820;&#22238;&#39318;&#39029;</a></section>
@@ -55,6 +58,7 @@ button{font:inherit;border:0;border-radius:8px;padding:12px 21px;background:#256
 const element = identifier => document.getElementById(identifier);
 let bootstrap = true;
 let ssoEnabled = false;
+let providerManaged = false;
 let authorizationHeaders = {};
 let availableModels = [];
 let selectedModels = new Set();
@@ -268,6 +272,12 @@ element('access-form').addEventListener('submit', async event => {
     availableModels = [...selectedModels];
     renderModels(result.settings.OpenAIModel);
     updateAuthModeFields();
+    if (providerManaged && !bootstrap) {
+      element('legacy-model-settings').hidden = true;
+      element('provider-managed-note').hidden = false;
+      const providerField = element('ChatProvider')?.closest('.field');
+      if (providerField) providerField.hidden = true;
+    }
     element('storage').textContent = '\u914d\u7f6e\u6587\u4ef6\uff1a' + result.path + '\nSQLite\uff1a' + result.database_path;
     element('access').hidden = true;
     element('configuration').hidden = false;
@@ -316,6 +326,7 @@ async function initialize() {
     const status = await response.json();
     bootstrap = status.bootstrap;
     ssoEnabled = status.sso_enabled;
+    providerManaged = Boolean(status.provider_managed);
     element('mode').textContent = bootstrap ? '\u9996\u6b21\u914d\u7f6e / \u6545\u969c\u6062\u590d' : '\u7ba1\u7406\u5458\u914d\u7f6e';
     element('token-field').hidden = !bootstrap;
     element('username-field').hidden = bootstrap || ssoEnabled;

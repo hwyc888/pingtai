@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { api } from '../api'
 import { copy } from '../copy'
-import loginLogo from '../../assets/login-9prbKjc7.png'
+import BrandMark from '../components/BrandMark.vue'
 
 const busy = ref(false)
 const loading = ref(true)
@@ -65,10 +65,7 @@ onMounted(async () => {
 <template>
   <main class="login-page">
     <section class="login-card" aria-labelledby="login-title">
-      <div class="login-brand-mark">
-        <img :src="loginLogo" alt="AI" />
-        <i></i>
-      </div>
+      <BrandMark class="login-brand-mark" />
       <p class="login-eyebrow">{{ copy.appName }}</p>
       <h1 id="login-title">{{ copy.loginTitle }}</h1>
       <p class="login-subtitle">{{ mode === 'sso' ? copy.ssoLoginHint : copy.loginSubtitle }}</p>

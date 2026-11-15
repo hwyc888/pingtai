@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
+import BrandMark from '../components/BrandMark.vue'
 
 const router = useRouter()
 const loading = ref(true)
@@ -319,12 +320,13 @@ onMounted(load)
   <main class="admin-page">
     <header class="admin-header">
       <div>
-        <p class="admin-eyebrow">PINGTAI ADMIN</p>
+        <div class="admin-brand-line"><BrandMark class="admin-brand-mark" /><p class="admin-eyebrow">PINGTAI ADMIN</p></div>
         <h1>平台管理</h1>
         <p class="admin-subtitle">管理员配置 AI 供应商、模型和用户账号；客户端无需选择模型。</p>
       </div>
       <div class="admin-header-actions">
-        <button class="admin-secondary" type="button" @click="openSetup">认证与系统设置</button>
+        <button class="admin-secondary" type="button" @click="router.push('/knowledge')">知识库管理</button>
+        <button class="admin-secondary" type="button" @click="openSetup">系统设置（登录/数据库）</button>
         <button class="admin-secondary" type="button" @click="router.push('/IntelligentAI')">返回对话</button>
       </div>
     </header>
@@ -342,8 +344,9 @@ onMounted(load)
           </div>
           <span class="admin-mode">{{ mode === 'sso' ? '学校统一身份认证' : '本地账号密码' }}</span>
         </div>
-        <p v-if="mode === 'sso'" class="admin-note">当前使用学校 SSO。平台管理员由 SSO 账号白名单控制；如需调整认证凭据和白名单，请在服务器安装设置页完成。</p>
+        <p v-if="mode === 'sso'" class="admin-note">当前使用学校 SSO。平台管理员由 SSO 账号白名单控制；如需调整认证凭据和白名单，请在系统设置页完成。</p>
         <p v-else class="admin-note">当前使用本地账号。可在本页创建普通用户、管理员并重置密码。</p>
+        <p class="admin-note">AI 供应商、API Key、模型列表和默认模型统一在本页管理。首次初始化填写的 OpenAI 配置会自动导入，无需在系统设置中重复修改。</p>
       </section>
 
       <section class="admin-card">
