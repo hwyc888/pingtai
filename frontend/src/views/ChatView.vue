@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import { clearAuth } from '../auth'
@@ -11,6 +11,7 @@ import tongyiIcon from '../../assets/tongyi-Dqrkk6Z-.png'
 
 const router = useRouter()
 const username = ref(localStorage.getItem('username') || '\u7528\u6237')
+const isAdmin = ref(false)
 const workspaces = ref([])
 const bots = ref([])
 const activeWorkspaceId = ref('')
