@@ -509,3 +509,6 @@ button:disabled { cursor: not-allowed; }
   .pm-manual-model { align-items: stretch; flex-direction: column; }
   .pm-manual-model-input input { width: 100%; flex: 1; }
 }
+
+.pm-model-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; cursor: pointer; }
+.pm-model-toggle input { width: 14px; height: 14px; flex: 0 0 auto; accent-color: #5269d7; }
