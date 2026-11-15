@@ -1,0 +1,20 @@
+[Unit]
+Description=pingtai Go platform
+After=network.target mysql.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pingtai
+EnvironmentFile=-/etc/pingtai.env
+Environment=PINGTAI_CONFIG_FILE=/opt/pingtai/pingtai-config.json
+ExecStart=/opt/pingtai/pingtai-linux-amd64
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

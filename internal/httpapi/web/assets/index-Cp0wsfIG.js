@@ -1,0 +1,1 @@
+import{_ as o,q as t,s,v as a,a as c,D as _,B as n}from"./index-BMDc8Iok.js";const r={class:"layout"},d={class:"layout-content"},i={__name:"index",setup(p){return n(),(u,l)=>{const e=_("router-view");return s(),t("div",r,[a("div",d,[c(e)])])}}},v=o(i,[["__scopeId","data-v-650cd8cb"]]);export{v as default};

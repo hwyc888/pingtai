@@ -1,0 +1,25 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+pingtai-config.json
+*.pem
+*.key
+coze_token_cache.json
+credentials.json
+
+# Local verification and development files
+.verification/
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+.DS_Store
+Thumbs.db
+
+# Redundant original frontend archives; built assets are tracked.
+frontend/ai.zip
+internal/httpapi/web/ai.zip
+dist/_zip_staging/
