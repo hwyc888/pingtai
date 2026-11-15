@@ -170,6 +170,7 @@ async function persistProvider() {
   const id = Number(result?.id || result?.data?.id)
   if (!id) throw new Error('供应商已提交，但没有收到有效的供应商 ID。')
   providerForm.value.id = id
+  isAdding.value = false
   await loadProviders()
   return id
 }
@@ -481,7 +482,7 @@ onMounted(load)
       <div class="pm-selected-preset">
         <span class="pm-preset-mark">{{ selectedPreset?.mark || '自' }}</span>
         <div><strong>{{ selectedPreset?.name || '自定义配置' }}</strong><small>{{ selectedPreset?.description || 'OpenAI 兼容 API' }}</small></div>
-        <button v-if="isAdding" type="button" @click="providerView = 'presets'">更换预设</button>
+        <button v-if="isAdding && !providerForm.id" type="button" @click="providerView = 'presets'">更换预设</button>
         <a v-else-if="selectedPreset?.website" :href="selectedPreset.website" target="_blank" rel="noreferrer">服务商官网 ↗</a>
       </div>
 
@@ -552,7 +553,8 @@ onMounted(load)
           <label v-for="model in filteredModels" :key="model.model_id" class="pm-model-row">
             <input v-model="model.enabled" type="checkbox" @change="onModelToggle(model)" />
             <span class="pm-model-name">{{ model.model_id }}</span>
-            <span class="pm-model-context">{{ model.context_length ? Number(model.context_length).toLocaleString() + ' 上下文' : '上下文未知' }}</span>
+            <input v-model.number="model.context_length" class="pm-metadata-input" type="number" min="1" placeholder="上下文" title="上下文长度（可选）" />
+            <input v-model.number="model.max_output_tokens" class="pm-metadata-input" type="number" min="1" placeholder="输出上限" title="最大输出 Token（可选）" />
             <button type="button" class="pm-default-star" :class="{ selected: providerForm.default_model === model.model_id }"
               :disabled="!model.enabled" @click.prevent="setDefaultModel(model)" :title="model.enabled ? '设为默认模型' : '请先启用模型'">
               {{ providerForm.default_model === model.model_id ? '默认' : '设为默认' }}

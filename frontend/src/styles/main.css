@@ -490,3 +490,9 @@ button:disabled { cursor: not-allowed; }
   .pm-model-footer > div { justify-content: flex-start; }
   .pm-provider-info { grid-template-columns: .6fr 1.2fr .8fr; }
 }
+
+.pm-metadata-input { width: 74px; min-width: 0; height: 27px; padding: 0 5px; border: 1px solid #e7eaf1; border-radius: 6px; color: #66718a; font-size: 8px; background: #fff; }
+.pm-metadata-input::placeholder { color: #adb4c3; }
+@media (max-width: 760px) {
+  .pm-metadata-input { width: 68px; }
+}
