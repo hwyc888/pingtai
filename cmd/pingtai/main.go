@@ -73,7 +73,7 @@ func run() error {
 		return err
 	}
 	address := browserAddress(listener.Addr().String())
-	log.Printf("PINGTAI platform: %s", address)
+	log.Printf("超凡AI问答平台: %s", address)
 	log.Printf("First visit: create the administrator account in the browser.")
 	log.Printf("SQLite database: %s", cfg.DatabasePath)
 

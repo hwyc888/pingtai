@@ -530,3 +530,52 @@ button:disabled { cursor: not-allowed; }
 .provider-required-actions button { min-height: 38px; padding: 0 16px; border: 1px solid #e3e7f1; border-radius: 10px; color: #66718b; font-size: 11px; font-weight: 700; background: #fff; cursor: pointer; }
 .provider-required-actions .provider-required-admin { border-color: #4f68dc; color: #fff; background: #4f68dc; }
 @keyframes provider-dialog-in { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+
+/* Official Chaofan AI brand mark: use the uploaded gradient artwork everywhere. */
+.brand-mark {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 0 !important;
+  color: transparent;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0 !important;
+  object-fit: contain;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.login-brand-mark, .welcome-mark, .header-mark, .assistant-avatar, .agent-avatar, .mini-bot-mark,
+.admin-brand-mark, .knowledge-brand-mark, .knowledge-empty-icon {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.login-brand-mark img, .assistant-avatar img, .agent-avatar img, .mini-bot-mark img,
+.knowledge-empty-icon img { background: transparent !important; }
+.admin-brand-line, .knowledge-brand-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.admin-brand-mark, .knowledge-brand-mark {
+  width: 28px;
+  height: 28px;
+}
+.knowledge-empty-icon {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  border-radius: 0 !important;
+  color: transparent;
+}
+@media (max-width: 700px) {
+  .login-brand-mark { width: 60px; height: 60px; }
+}

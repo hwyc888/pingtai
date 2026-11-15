@@ -1,6 +1,6 @@
 export const copy = Object.freeze({
-  appName: 'AI \u80FD\u529B\u5E73\u53F0',
-  loginTitle: '\u6B22\u8FCE\u767B\u5F55 AI \u80FD\u529B\u5E73\u53F0',
+  appName: '超凡AI问答平台',
+  loginTitle: '欢迎登录超凡AI问答平台',
   loginSubtitle: "请使用平台管理员创建的账号和密码登录",
   localLoginFooter: "账号由平台管理员创建和管理",
   loginModeUnavailable: "暂时无法读取登录配置，请稍后重试。",

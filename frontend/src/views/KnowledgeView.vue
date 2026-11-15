@@ -284,7 +284,7 @@ onMounted(load)
   <main class="knowledge-page">
     <header class="knowledge-header">
       <div>
-        <div class="knowledge-brand-line"><BrandMark class="knowledge-brand-mark" /><p class="admin-eyebrow">PINGTAI KNOWLEDGE</p></div>
+        <div class="knowledge-brand-line"><BrandMark class="knowledge-brand-mark" /><p class="admin-eyebrow">超凡AI问答平台 · 知识库</p></div>
         <h1>知识库管理</h1>
         <p class="admin-subtitle">管理知识库、上传资料、跟踪处理状态并发布版本。</p>
       </div>

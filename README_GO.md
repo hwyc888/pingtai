@@ -1,4 +1,4 @@
-# pingtai Go edition
+# 超凡AI问答平台 · Go edition
 
 ## Release package
 

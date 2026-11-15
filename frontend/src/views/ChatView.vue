@@ -373,7 +373,7 @@ onBeforeUnmount(() => {
       <button class="icon-button" type="button" :aria-label="copy.history" @click="showHistoryDrawer = true">&#9776;</button>
       <div class="chat-header-title">
         <BrandMark class="header-mark" />
-        <span>{{ selectedBot?.name || copy.newChat }}</span>
+        <span>{{ copy.appName }}</span>
       </div>
       <button class="icon-button new-chat-button" type="button" :aria-label="copy.startNewChat" :disabled="isSending" @click="startNewConversation">+</button>
     </header>

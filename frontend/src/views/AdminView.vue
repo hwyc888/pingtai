@@ -117,7 +117,7 @@ onMounted(load)
   <main class="admin-page">
     <header class="admin-header">
       <div>
-        <div class="admin-brand-line"><BrandMark class="admin-brand-mark" /><p class="admin-eyebrow">PINGTAI ADMIN</p></div>
+        <div class="admin-brand-line"><BrandMark class="admin-brand-mark" /><p class="admin-eyebrow">超凡AI问答平台 · 管理中心</p></div>
         <h1>平台管理</h1>
         <p class="admin-subtitle">管理模型供应商、默认模型和平台用户。</p>
       </div>
