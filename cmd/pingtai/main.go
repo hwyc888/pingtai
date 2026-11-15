@@ -178,7 +178,14 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 				}
 			}
 		}
-	} else if !errors.Is(providerErr, sql.ErrNoRows) {
+	} else if errors.Is(providerErr, sql.ErrNoRows) {
+		existing, listErr := providers.List(ctx)
+		if listErr != nil {
+			cleanup()
+			return nil, nil, nil, errors.New("cannot load AI providers from SQLite")
+		}
+		providerManaged = len(existing) > 0
+	} else {
 		cleanup()
 		return nil, nil, nil, errors.New("cannot load active AI provider from SQLite")
 	}

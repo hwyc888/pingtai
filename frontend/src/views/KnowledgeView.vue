@@ -31,7 +31,7 @@ function unwrap(result) {
   if (result?.error || (Number.isFinite(Number(result?.code)) && ![0, 200].includes(Number(result.code)))) {
     throw new Error(result?.msg || '请求失败')
   }
-  return result?.data ?? {}
+  return result?.data ?? result ?? {}
 }
 
 function listFrom(data, keys) {
@@ -389,7 +389,7 @@ onMounted(load)
                           <ul class="knowledge-version-docs">
                             <li v-for="document in version.documents || []" :key="document.document_id || document.id || document.name">
                               <strong>{{ document.name || document.document_name || '未命名文档' }}</strong>
-                              <span>{{ document.status === 1 || document.status === 1.0 ? '已完成' : '状态 ' + document.status }}</span>
+                              <span>{{ documentStatus(document) }}</span>
                             </li>
                           </ul>
                         </td>
