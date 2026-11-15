@@ -21,7 +21,7 @@ func SettingsPath() string {
 
 func Defaults() Config {
 	return Config{
-		Addr: ":5050", ChatProvider: "openai", AccessTokenTTL: 30 * time.Minute,
+		Addr: ":5050", SSOBaseURL: "https://ids.zcvc.cn/cas", ChatProvider: "openai", AccessTokenTTL: 30 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour, MaxUploadBytes: 100 * 1024 * 1024,
 		CozeBaseURL: "https://api.coze.cn", CozeWorkspaceID: "7481824441182617636",
 		CTYunAuthMode: "bearer", CTYunRegion: "QG", CTYunSignPrefix: "teleai-cloud-auth-v1",

@@ -2,7 +2,7 @@
 
 This directory contains the editable Vue 3 application source. The current application has two routes:
 
-- `/login`: username/password login and token refresh.
+- `/login`: school unified identity authentication (OAuth2 authorization-code flow); the Go backend stores signed session tokens in HttpOnly cookies.
 - `/IntelligentAI`: model/agent selection, chat, attachments, reasoning display and account actions.
 
 ## Development

@@ -103,6 +103,9 @@ async function initialize() {
   isLoading.value = true
   pageError.value = ''
   try {
+    const profile = assertSuccess(await api.get('/auth/me'))
+    username.value = profile.display_name || profile.account || '用户'
+    localStorage.setItem('username', username.value)
     await loadWorkspaces()
     if (workspaces.value.length) {
       activeWorkspaceId.value = workspaces.value[0].id
@@ -330,7 +333,7 @@ async function startNewConversation() {
 
 async function logout() {
   try {
-    await api.get('/auth/logout')
+    await api.post('/auth/logout', {}, { auth: false })
   } catch {
     // Clear local credentials even if the server session has already expired.
   }

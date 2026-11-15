@@ -60,8 +60,16 @@ func (s *Service) IssuePair(username string) (TokenPair, error) {
 	return s.tokens.IssuePair(username)
 }
 
+func (s *Service) IssuePairWithName(username, name string) (TokenPair, error) {
+	return s.tokens.IssuePairWithName(username, name)
+}
+
 func (s *Service) IssueAccess(username string) (string, error) {
 	return s.tokens.IssueAccess(username)
+}
+
+func (s *Service) IssueAccessWithName(username, name string) (string, error) {
+	return s.tokens.IssueAccessWithName(username, name)
 }
 
 func (s *Service) Parse(token string) (Claims, error) {

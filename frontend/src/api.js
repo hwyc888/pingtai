@@ -1,5 +1,3 @@
-import { clearAuth, getAccessToken, setAccessToken } from './auth'
-
 const baseURL = (window.g?.baseURL || import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 let refreshPromise = null
 
@@ -26,16 +24,12 @@ async function readResponse(response) {
 async function refreshAccessToken() {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
-    const refreshToken = localStorage.getItem('refresh_token')
-    if (!refreshToken) return false
     const response = await fetch(buildURL('/auth/refresh'), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${refreshToken}` },
+      credentials: 'same-origin',
     })
     const data = await readResponse(response)
-    if (!response.ok || data?.errcode !== 200 || !data?.access_token) return false
-    setAccessToken(data.access_token)
-    return true
+    return response.ok && data?.errcode === 200
   })().finally(() => {
     refreshPromise = null
   })
@@ -52,9 +46,6 @@ export async function request(path, options = {}) {
     headers: customHeaders = {},
   } = options
   const headers = new Headers(customHeaders)
-  const token = getAccessToken()
-  if (auth && token) headers.set('Authorization', `Bearer ${token}`)
-
   let payload = body
   if (payload !== undefined && payload !== null && !(payload instanceof FormData) && typeof payload !== 'string') {
     headers.set('Content-Type', 'application/json')

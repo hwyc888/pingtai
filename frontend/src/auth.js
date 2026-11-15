@@ -1,4 +1,4 @@
-const ACCESS_COOKIE = 'Authorization'
+const SIGNED_IN_COOKIE = 'pingtai_signed_in'
 
 function readCookie(name) {
   const prefix = `${name}=`
@@ -6,24 +6,13 @@ function readCookie(name) {
   return item ? decodeURIComponent(item.slice(prefix.length)) : ''
 }
 
-export function getAccessToken() {
-  return readCookie(ACCESS_COOKIE)
-}
-
-export function setAccessToken(token, expiresAt) {
-  const expiry = expiresAt
-    ? new Date(Number(expiresAt) * 1000)
-    : new Date(Date.now() + 30 * 60 * 1000)
-  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
-  document.cookie = `${ACCESS_COOKIE}=${encodeURIComponent(token)}; Path=/; Expires=${expiry.toUTCString()}; SameSite=Lax${secure}`
+// This flag only controls SPA navigation. Authentication is enforced by the
+// HttpOnly Authorization cookie and verified by the Go API on every request.
+export function hasAccessToken() {
+  return readCookie(SIGNED_IN_COOKIE) === '1'
 }
 
 export function clearAuth() {
-  document.cookie = `${ACCESS_COOKIE}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`
-  localStorage.removeItem('refresh_token')
+  document.cookie = `${SIGNED_IN_COOKIE}=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`
   localStorage.removeItem('username')
-}
-
-export function hasAccessToken() {
-  return Boolean(getAccessToken())
 }

@@ -16,6 +16,7 @@ import (
 
 type Claims struct {
 	Subject   string `json:"sub"`
+	Name      string `json:"name,omitempty"`
 	Type      string `json:"type"`
 	JTI       string `json:"jti"`
 	Issued    int64  `json:"iat"`
@@ -45,11 +46,15 @@ func NewTokenManager(secret string, accessTTL, refreshTTL time.Duration) *TokenM
 }
 
 func (m *TokenManager) IssuePair(subject string) (TokenPair, error) {
-	access, err := m.issue(subject, "access", m.accessTTL, true)
+	return m.IssuePairWithName(subject, "")
+}
+
+func (m *TokenManager) IssuePairWithName(subject, name string) (TokenPair, error) {
+	access, err := m.issue(subject, name, "access", m.accessTTL, true)
 	if err != nil {
 		return TokenPair{}, err
 	}
-	refresh, err := m.issue(subject, "refresh", m.refreshTTL, false)
+	refresh, err := m.issue(subject, name, "refresh", m.refreshTTL, false)
 	if err != nil {
 		return TokenPair{}, err
 	}
@@ -57,10 +62,14 @@ func (m *TokenManager) IssuePair(subject string) (TokenPair, error) {
 }
 
 func (m *TokenManager) IssueAccess(subject string) (string, error) {
-	return m.issue(subject, "access", m.accessTTL, true)
+	return m.IssueAccessWithName(subject, "")
 }
 
-func (m *TokenManager) issue(subject, tokenType string, ttl time.Duration, fresh bool) (string, error) {
+func (m *TokenManager) IssueAccessWithName(subject, name string) (string, error) {
+	return m.issue(subject, name, "access", m.accessTTL, true)
+}
+
+func (m *TokenManager) issue(subject, name, tokenType string, ttl time.Duration, fresh bool) (string, error) {
 	if subject == "" || len(m.secret) == 0 {
 		return "", errors.New("token subject and signing secret are required")
 	}
@@ -71,7 +80,7 @@ func (m *TokenManager) issue(subject, tokenType string, ttl time.Duration, fresh
 	}
 	header, _ := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
 	claims := Claims{
-		Subject: subject, Type: tokenType, JTI: jti,
+		Subject: subject, Name: name, Type: tokenType, JTI: jti,
 		Issued: now.Unix(), NotBefore: now.Unix(),
 		Expires: now.Add(ttl).Unix(), Fresh: fresh,
 	}

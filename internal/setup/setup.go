@@ -28,7 +28,7 @@ import (
 var page string
 
 var secretFields = []string{
-	"JWTSecret", "ModelAPIKey", "OpenAIAPIKey", "CozeAccessToken", "CozePrivateKey", "CTYunAPIKey", "CTYunAppKey",
+	"JWTSecret", "SSOClientSecret", "ModelAPIKey", "OpenAIAPIKey", "CozeAccessToken", "CozePrivateKey", "CTYunAPIKey", "CTYunAppKey",
 }
 
 type Handler struct {
@@ -67,7 +67,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/setup/status" && r.Method == http.MethodGet {
-		h.respond(w, http.StatusOK, map[string]any{"bootstrap": h.auth == nil})
+		h.respond(w, http.StatusOK, map[string]any{"bootstrap": h.auth == nil, "sso_enabled": h.current.SSOConfigured()})
 		return
 	}
 	if r.URL.Path != "/setup/api" && r.URL.Path != "/setup/models" {
@@ -120,6 +120,19 @@ func sameOrigin(r *http.Request) bool {
 func (h *Handler) authorized(r *http.Request) bool {
 	if h.auth == nil {
 		return subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Setup-Token")), []byte(h.token)) == 1
+	}
+	if h.current.SSOConfigured() {
+		token := strings.TrimSpace(r.Header.Get("Authorization"))
+		if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+			token = strings.TrimSpace(token[len("Bearer "):])
+		}
+		if token == "" {
+			if cookie, err := r.Cookie("Authorization"); err == nil {
+				token = cookie.Value
+			}
+		}
+		claims, err := h.auth.Parse(token)
+		return err == nil && claims.Type == "access" && h.current.IsSSOAdmin(claims.Subject)
 	}
 	username, password, ok := r.BasicAuth()
 	if !ok {
@@ -313,6 +326,9 @@ func prepareDatabase(ctx context.Context, candidate config.Config, username, pas
 	defer db.Close()
 	if err := database.Migrate(ctx, db); err != nil {
 		return errors.New("Cannot initialize database tables. Check the database account's schema privileges.")
+	}
+	if candidate.SSOConfigured() {
+		return nil
 	}
 	var admins int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_user WHERE usertype=1 AND status=1 AND COALESCE(deltag,0)=0").Scan(&admins); err != nil {

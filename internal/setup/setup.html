@@ -27,11 +27,12 @@ button{font:inherit;border:0;border-radius:8px;padding:12px 21px;background:#256
 <div class="field full" id="token-field" hidden><label for="token">&#19968;&#27425;&#24615;&#35775;&#38382;&#23494;&#38053;</label><input id="token" type="password" autocomplete="off"></div>
 <div class="field" id="username-field" hidden><label for="username">&#31649;&#29702;&#21592;&#36134;&#21495;</label><input id="username" autocomplete="username"></div>
 <div class="field" id="password-field" hidden><label for="password">&#31649;&#29702;&#21592;&#23494;&#30721;</label><input id="password" type="password" autocomplete="current-password"></div>
-</div><button id="unlock" disabled>&#36827;&#20837;&#37197;&#32622;</button>
+</div><div class="actions"><button id="unlock" disabled>&#36827;&#20837;&#37197;&#32622;</button><a id="sso-login" href="/auth/sso/login?return_to=%2Fsetup" hidden>&#20351;&#29992;&#23398;&#26657;&#32479;&#19968;&#36523;&#20221;&#35748;&#35777;&#31649;&#29702;&#21592;&#30331;&#24405;</a></div>
 </form></section>
 <form id="configuration" hidden>
 <div class="note">&#23494;&#30721;&#21644;&#23494;&#38053;&#19981;&#20250;&#26174;&#31034;&#24050;&#20445;&#23384;&#30340;&#21407;&#25991;&#12290;&#30041;&#31354;&#20445;&#30041;&#21407;&#20540;&#65307;&#38656;&#35201;&#21024;&#38500;&#26102;&#21246;&#36873;&#8220;&#28165;&#31354;&#24050;&#20445;&#23384;&#20540;&#8221;&#12290;JWT &#23494;&#38053;&#30041;&#31354;&#26102;&#33258;&#21160;&#29983;&#25104;&#12290;</div>
 <section class="card"><h2>1. &#26381;&#21153;&#35774;&#32622;</h2><div class="grid" id="server-fields"></div></section>
+<section class="card"><h2>&#23398;&#26657;&#32479;&#19968;&#36523;&#20221;&#35748;&#35777; (OAuth2)</h2><p>&#22635;&#20889;&#23398;&#26657;&#25552;&#20379;&#30340; client_id&#12289;client_secret &#21644;&#22312;&#32479;&#19968;&#36523;&#20221;&#35748;&#35777;&#24179;&#21488;&#27880;&#20876;&#30340;&#23436;&#25972;&#22238;&#35843;&#22320;&#22336;&#12290;&#31649;&#29702;&#21592;&#36134;&#21495;&#20351;&#29992;&#23398;&#26657;&#32479;&#19968;&#35748;&#35777;&#30340;&#36134;&#21495;&#26631;&#35782;&#65292;&#22810;&#20010;&#36134;&#21495;&#29992;&#33519;&#21495;&#12289;&#20998;&#21495;&#25110;&#25442;&#34892;&#20998;&#38548;&#12290;</p><div class="grid" id="sso-fields" style="margin-top:18px"></div></section>
 <section class="card"><h2>2. MySQL &#25968;&#25454;&#24211;</h2><p>&#35831;&#20808;&#21019;&#24314;&#25968;&#25454;&#24211;&#12290;&#20445;&#23384;&#26102;&#20250;&#23454;&#38469;&#27979;&#35797;&#36830;&#25509;&#24182;&#33258;&#21160;&#21019;&#24314;&#25152;&#38656;&#34920;&#65292;&#19981;&#21024;&#38500;&#24050;&#26377;&#25968;&#25454;&#12290;</p><div class="grid" id="database-fields" style="margin-top:18px"></div></section>
 <section class="card"><h2>3. &#39318;&#20010;&#31649;&#29702;&#21592;</h2><p>&#26032;&#25968;&#25454;&#24211;&#24517;&#22635;&#65307;&#24050;&#26377;&#21487;&#29992;&#31649;&#29702;&#21592;&#26102;&#24573;&#30053;&#27492;&#39033;&#65292;&#19981;&#20250;&#20462;&#25913;&#24050;&#26377;&#23494;&#30721;&#12290;</p><div class="grid" style="margin-top:18px"><div class="field"><label for="admin-username">&#31649;&#29702;&#21592;&#36134;&#21495;</label><input id="admin-username" value="admin" maxlength="50" autocomplete="off"></div><div class="field"><label for="admin-password">&#21021;&#22987;&#23494;&#30721;&#65288;8-72 &#23383;&#33410;&#65289;</label><input id="admin-password" type="password" autocomplete="new-password"></div><div class="field"><label for="admin-confirm">&#30830;&#35748;&#21021;&#22987;&#23494;&#30721;</label><input id="admin-confirm" type="password" autocomplete="new-password"></div></div></section>
 <section class="card"><h2>4. OpenAI &#20860;&#23481;&#25509;&#21475;</h2><p>Base URL &#21487;&#22635; https://api.openai.com/v1 &#25110;&#20854;&#20182;&#20860;&#23481;&#26381;&#21153;&#30340;&#22522;&#30784;&#22320;&#22336;&#65292;&#20063;&#21487;&#22635;&#23436;&#25972; /chat/completions &#22320;&#22336;&#12290;&#26412;&#22320;&#26080;&#35748;&#35777;&#26381;&#21153;&#21487;&#30041;&#31354; API Key&#12290;&#27169;&#22411;&#33021;&#21147;&#21462;&#20915;&#20110;&#19978;&#28216;&#12290;</p><div class="grid" id="model-fields" style="margin-top:18px"></div></section>
@@ -53,6 +54,7 @@ button{font:inherit;border:0;border-radius:8px;padding:12px 21px;background:#256
 <script>
 const element = identifier => document.getElementById(identifier);
 let bootstrap = true;
+let ssoEnabled = false;
 let authorizationHeaders = {};
 let availableModels = [];
 let selectedModels = new Set();
@@ -63,6 +65,13 @@ const fieldGroups = {
     ['Addr', '\u76d1\u542c\u5730\u5740', 'text', ':5050'],
     ['ChatProvider', '\u804a\u5929\u670d\u52a1\uff08openai = \u901a\u7528\u517c\u5bb9\u6a21\u5f0f\uff09', 'select', ['openai', 'ctyun', 'coze']],
     ['ContextTurns', '\u7f51\u9875\u804a\u5929\u5386\u53f2\u8f6e\u6570\uff080 = \u5168\u90e8\uff0c\u6700\u5927 1000\uff09', 'number']
+  ],
+  sso: [
+    ['SSOBaseURL', '\u8ba4\u8bc1\u4e2d\u5fc3\u670d\u52a1\u5730\u5740', 'url', 'https://ids.zcvc.cn/cas'],
+    ['SSOClientID', 'client_id', 'text'],
+    ['SSOClientSecret', 'client_secret', 'password'],
+    ['SSORedirectURL', '\u6ce8\u518c\u7684\u5b8c\u6574\u56de\u8c03\u5730\u5740', 'url'],
+    ['SSOAdminAccounts', '\u7ba1\u7406\u5458\u7edf\u4e00\u8eab\u4efd\u8d26\u53f7 (\u591a\u4e2a\u7528\u9017\u53f7\u6216\u6362\u884c\u5206\u9694)', 'textarea']
   ],
   model: [
     ['OpenAIBaseURL', 'Base URL', 'url', 'https://api.openai.com/v1'],
@@ -157,7 +166,7 @@ function renderField(container, definition, value, configured, prefix = '') {
 async function requestApi(method = 'GET', body, path = '/setup/api') {
   const response = await fetch(path, {
     method, headers: {'Content-Type': 'application/json', 'X-Setup-Request': '1', ...authorizationHeaders},
-    body: body ? JSON.stringify(body) : undefined, credentials: 'omit'
+    body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin'
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || 'Request failed: ' + response.status);
@@ -238,6 +247,8 @@ element('access-form').addEventListener('submit', async event => {
   try {
     if (bootstrap) {
       authorizationHeaders = {'X-Setup-Token': element('token').value.trim()};
+    } else if (ssoEnabled) {
+      authorizationHeaders = {};
     } else {
       const credentials = new TextEncoder().encode(element('username').value + ':' + element('password').value);
       authorizationHeaders = {Authorization: 'Basic ' + btoa(Array.from(credentials, byte => String.fromCharCode(byte)).join(''))};
@@ -302,11 +313,15 @@ async function initialize() {
   try {
     const response = await fetch('/setup/status', {cache: 'no-store'});
     if (!response.ok) throw new Error('Cannot read setup status.');
-    bootstrap = (await response.json()).bootstrap;
+    const status = await response.json();
+    bootstrap = status.bootstrap;
+    ssoEnabled = status.sso_enabled;
     element('mode').textContent = bootstrap ? '\u9996\u6b21\u914d\u7f6e / \u6545\u969c\u6062\u590d' : '\u7ba1\u7406\u5458\u914d\u7f6e';
     element('token-field').hidden = !bootstrap;
-    element('username-field').hidden = bootstrap;
-    element('password-field').hidden = bootstrap;
+    element('username-field').hidden = bootstrap || ssoEnabled;
+    element('password-field').hidden = bootstrap || ssoEnabled;
+    element('sso-login').hidden = bootstrap || !ssoEnabled;
+    element('unlock').textContent = ssoEnabled && !bootstrap ? '\u4f7f\u7528\u5f53\u524d SSO \u767b\u5f55\u72b6\u6001\u8fdb\u5165\u914d\u7f6e' : '\u8fdb\u5165\u914d\u7f6e';
     element('unlock').disabled = false;
     if (bootstrap && fragmentToken) {
       element('token').value = fragmentToken;

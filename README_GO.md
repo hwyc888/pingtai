@@ -31,11 +31,11 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 2. Double-click start.bat.
 3. The browser opens automatically. No Notepad or command-line configuration is needed.
 4. In the web wizard, enter the MySQL host, port, username, password and existing database name.
-5. Enter the initial administrator username/password and the model service settings. A JWT signing secret is generated automatically when left blank.
-6. Click the validate-and-save button. The server tests MySQL, initializes tables, creates the first administrator if needed and writes pingtai-config.json next to the executable.
+5. Configure the school SSO OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). Configure the model service settings. A JWT signing secret is generated automatically when left blank. The local administrator username/password is only needed for the legacy local-login mode; SSO mode does not create or authenticate users through ai_user.
+6. Click the validate-and-save button. The server tests MySQL, initializes tables and writes pingtai-config.json next to the executable.
 7. Stop the current server (Ctrl+C or close its window), then double-click start.bat again. The saved configuration is loaded and the normal frontend opens.
 
-The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and sign in with an active administrator account. Save and restart again to apply changes. If you change the listening port, use the new port after restart.
+The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and sign in through the school unified identity service using an account listed in SSO_ADMIN_ACCOUNTS. Save and restart again to apply changes. If you change the listening port, use the new port after restart.
 
 The EXE serves the embedded frontend directly. No frontend/ folder is required.
 
@@ -63,6 +63,30 @@ For systemd, use deploy/pingtai.service. Give its service user write permission 
 - A successful save requires a manual service restart. Setup locks further configuration changes until that restart; an already-running application continues with its previous configuration.
 - A database failure on restart opens protected recovery setup rather than terminating the process. Health requests return HTTP 503 until normal initialization succeeds.
 - Model credentials are optional for initial deployment. The page warns if the selected chat provider is incomplete; chat calls require working provider credentials and a reachable upstream service.
+
+## School unified identity authentication
+
+The web login uses the school's OAuth2 authorization-code flow described in the integration guide:
+
+1. The browser visits `/auth/sso/login` and is redirected to `https://ids.zcvc.cn/cas/oauth2.0/authorize`.
+2. The school returns a one-time authorization code to the registered callback.
+3. The Go server exchanges the code at `/oauth2.0/token` using a form-encoded POST.
+4. The server retrieves the user profile from `/oauth2.0/profile`, then issues its own short-lived access and refresh session cookies.
+5. The server refreshes the school's OAuth2 refresh token when the local access session is renewed. If the school refresh token is no longer valid, the user must sign in again.
+
+Register this exact callback URL with the school (replace the host with the public HTTPS address of this deployment):
+
+```
+https://your-pingtai-domain.example/auth/sso/callback
+```
+
+Set `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URL` and `SSO_ADMIN_ACCOUNTS` in the web setup page or environment. The redirect URL must exactly match the callback registered with the school. The default SSO base URL is `https://ids.zcvc.cn/cas`.
+
+The profile parser prefers `user.useraccount`, then `user.account`, then the top-level `id` as the stable account identifier. It uses `user.username` as the display name when present. The school guide's sample profile shows these fields; confirm the account identifier selected for your tenant with the school's SSO administrator.
+
+`SSO_ADMIN_ACCOUNTS` is a comma-, semicolon- or newline-separated allowlist of school SSO account identifiers. Only these accounts can access platform administration APIs and the protected setup page. Normal users can use the chat UI without a MySQL account. MySQL remains the platform's conversation and application-data store; it is not used to verify SSO passwords.
+
+The OAuth2 guide does not define a separate token-revocation endpoint or guarantee a global CAS logout callback for this flow. Logging out of pingtai clears the local platform session; the school's SSO session may remain active until the school expires or ends it.
 
 ## Configuration
 
