@@ -32,13 +32,23 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.HandleFunc("GET /auth/bootstrap/status", h.BootstrapStatus)
 	api.HandleFunc("POST /auth/bootstrap/register", h.RegisterFirstAdmin)
 	api.HandleFunc("POST /auth/login", h.Login)
+	api.HandleFunc("GET /auth/mode", h.AuthMode)
+	api.HandleFunc("GET /auth/sso/login", h.SSOLogin)
+	api.HandleFunc("GET /auth/sso/callback", h.SSOCallback)
+	api.HandleFunc("GET /auth/sso/logout", h.SSOLogout)
 	api.Handle("GET /auth/me", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CurrentUser)))
 	api.Handle("POST /auth/refresh", middleware.RequireRefresh(h.Auth.Tokens(), http.HandlerFunc(h.Refresh)))
 	api.HandleFunc("GET /auth/logout", h.Logout)
 	api.HandleFunc("POST /auth/logout", h.Logout)
 
 	admin := func(next http.Handler) http.Handler {
-		return middleware.RequireAdmin(h.Auth.Tokens(), h.Users, next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.SSOConfigured() {
+				middleware.RequireAdminAccounts(h.Auth.Tokens(), cfg.SSOAdminAccounts, next).ServeHTTP(w, r)
+				return
+			}
+			middleware.RequireAdmin(h.Auth.Tokens(), h.Users, next).ServeHTTP(w, r)
+		})
 	}
 	api.Handle("POST /auth/addUser", admin(http.HandlerFunc(h.AddUser)))
 	api.Handle("POST /auth/delUser", admin(http.HandlerFunc(h.DeleteUser)))
@@ -53,6 +63,21 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("POST /admin/providers/models/update", admin(http.HandlerFunc(h.UpdateProviderModel)))
 	api.Handle("POST /admin/providers/test", admin(http.HandlerFunc(h.TestProviderConnection)))
 	api.Handle("POST /admin/providers/test-model", admin(http.HandlerFunc(h.TestProviderModel)))
+
+	api.Handle("GET /admin/auth-settings", admin(http.HandlerFunc(h.GetAuthSettings)))
+	api.Handle("POST /admin/auth-settings", admin(http.HandlerFunc(h.SaveAuthSettings)))
+
+	api.Handle("GET /admin/knowledge/bases", admin(http.HandlerFunc(h.ListKnowledgeBases)))
+	api.Handle("POST /admin/knowledge/bases/create", admin(http.HandlerFunc(h.CreateKnowledgeBase)))
+	api.Handle("POST /admin/knowledge/bases/update", admin(http.HandlerFunc(h.UpdateKnowledgeBase)))
+	api.Handle("POST /admin/knowledge/bases/delete", admin(http.HandlerFunc(h.DeleteKnowledgeBase)))
+	api.Handle("GET /admin/knowledge/documents", admin(http.HandlerFunc(h.ListLocalKnowledgeDocuments)))
+	api.Handle("POST /admin/knowledge/documents/upload", admin(http.HandlerFunc(h.UploadLocalKnowledgeDocuments)))
+	api.Handle("POST /admin/knowledge/documents/delete", admin(http.HandlerFunc(h.DeleteLocalKnowledgeDocument)))
+	api.Handle("GET /admin/knowledge/versions", admin(http.HandlerFunc(h.ListLocalKnowledgeVersions)))
+	api.Handle("POST /admin/knowledge/versions/publish", admin(http.HandlerFunc(h.PublishLocalKnowledgeVersion)))
+
+	api.Handle("GET /knowledge/bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListAvailableKnowledgeBases)))
 
 	api.Handle("GET /agents/models", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListChatModels)))
 	api.Handle("POST /agents/createConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CreateConversation)))

@@ -30,6 +30,7 @@ func TestAuthModeRequiresCompleteSSOSettings(t *testing.T) {
 	cfg.SSOClientID = "client"
 	cfg.SSOClientSecret = "secret"
 	cfg.SSORedirectURL = "https://platform.example/auth/sso/callback"
+	cfg.SSOServiceURL = "https://platform.example/"
 	cfg.SSOAdminAccounts = "admin"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("complete SSO configuration rejected: %v", err)

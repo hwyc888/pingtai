@@ -45,12 +45,7 @@ func run() error {
 	}
 
 	// Platform-local accounts and OpenAI-compatible providers are managed in the UI.
-	cfg.AuthMode = "local"
-	cfg.SSOBaseURL = ""
-	cfg.SSOClientID = ""
-	cfg.SSOClientSecret = ""
-	cfg.SSORedirectURL = ""
-	cfg.SSOAdminAccounts = ""
+	// Authentication mode and SSO credentials are loaded from SQLite at startup.
 	cfg.ChatProvider = "openai"
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -113,6 +108,10 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, fun
 	if err := database.Migrate(ctx, db); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("SQLite database migration failed: %w", err)
+	}
+	if err := config.LoadAuthSettings(ctx, db, &cfg); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("cannot load authentication settings from SQLite: %w", err)
 	}
 	if err := ensureJWTSecret(ctx, db, &cfg); err != nil {
 		cleanup()

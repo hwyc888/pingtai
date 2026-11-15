@@ -10,6 +10,10 @@ const router = useRouter()
 const username = ref(localStorage.getItem('username') || '用户')
 const isAdmin = ref(false)
 const models = ref([])
+const knowledgeBases = ref([])
+const knowledgeEnabled = ref(false)
+const selectedKnowledgeBaseId = ref('')
+const authMode = ref('local')
 const selectedBot = ref(null)
 const conversationId = ref('')
 const messages = ref([])
@@ -54,6 +58,15 @@ async function loadModels() {
   }
 }
 
+async function loadKnowledgeBases() {
+  const data = assertSuccess(await api.get('/knowledge/bases'))
+  knowledgeBases.value = Array.isArray(data) ? data : []
+  if (!knowledgeBases.value.some((item) => item.id === selectedKnowledgeBaseId.value)) {
+    selectedKnowledgeBaseId.value = knowledgeBases.value[0]?.id || ''
+  }
+  if (!knowledgeBases.value.length) knowledgeEnabled.value = false
+}
+
 async function createConversation() {
   const payload = selectedBot.value?.bot_id ? { bot_id: selectedBot.value.bot_id } : {}
   const result = await api.post('/agents/createConversation', payload)
@@ -84,7 +97,10 @@ async function initialize() {
     username.value = profile.display_name || profile.account || '用户'
     isAdmin.value = Boolean(profile.is_admin)
     localStorage.setItem('username', username.value)
+    const auth = assertSuccess(await api.get('/auth/mode', undefined, { auth: false }))
+    authMode.value = auth.mode || 'local'
     await loadModels()
+    await loadKnowledgeBases()
     await loadConversationHistory()
     if (selectedBot.value) await createConversation()
   } catch (error) {
@@ -253,6 +269,7 @@ async function sendMessage(text = draft.value, options = {}) {
     form.append('bot_id', selectedBot.value.bot_id)
     form.append('stream', '2')
     form.append('content', content)
+    form.append('knowledge_base_id', knowledgeEnabled.value ? selectedKnowledgeBaseId.value : '')
     form.append('up_type', selectedFile ? (isImageFile(selectedFile) ? 'image' : 'file') : '')
     form.append('url', '')
     if (selectedFile) form.append('file', selectedFile)
@@ -358,6 +375,10 @@ async function logout() {
     // Clear local credentials even if the server session has already expired.
   }
   clearAuth()
+  if (authMode.value === 'sso') {
+    window.location.assign('/auth/sso/logout')
+    return
+  }
   await router.replace('/login')
 }
 
@@ -413,15 +434,21 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div v-if="models.length" class="footer-toolbar">
-        <label class="model-select-label">
+      <div v-if="models.length || knowledgeBases.length" class="footer-toolbar">
+        <label v-if="models.length" class="model-select-label">
           <span>模型</span>
           <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
-            <option v-if="!models.length" value="">尚未配置模型</option>
             <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
           </select>
         </label>
         <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
+        <label class="knowledge-toggle">
+          <input v-model="knowledgeEnabled" type="checkbox" :disabled="!knowledgeBases.length || isSending" />
+          <span>使用知识库</span>
+        </label>
+        <select v-if="knowledgeBases.length" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="!knowledgeEnabled || isSending">
+          <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }}</option>
+        </select>
       </div>
       <div class="composer-shell">
         <div v-if="attachment" class="attachment-chip">

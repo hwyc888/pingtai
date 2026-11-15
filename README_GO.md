@@ -18,7 +18,7 @@ The ZIP contains:
 - pingtai.exe: Windows AMD64 server, frontend embedded.
 - pingtai-linux-amd64: Linux AMD64 server, frontend embedded.
 - .env.example: safe configuration template, no secrets.
-- start.bat: Windows launcher that opens the browser for web-based setup.
+- start.bat: Windows launcher that opens the browser for platform login.
 - manage-go.sh: Linux launcher.
 - README.md: deployment instructions.
 - deploy/: systemd and Nginx examples.
@@ -30,23 +30,23 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 1. Extract pingtai-release.zip to a writable directory.
 2. Double-click start.bat. The platform starts and opens the normal login page.
 3. On the first visit, create the first administrator account. The first account in a new SQLite database is automatically assigned the administrator role.
-4. Sign in, open **平台管理**, add an OpenAI-compatible provider, enter its Base URL and API Key, discover models, select a default model, and activate the provider.
+4. Sign in, open **平台管理 → 模型供应商**, add an OpenAI-compatible provider, enter its Base URL and API Key, discover models, select a default model, and activate the provider. The same management area also contains **知识库管理** and **登录设置**.
 5. Restart the service after activating or changing the active provider. Then start a new conversation and begin using the platform.
 
-There is no separate setup wizard, setup token, or first-run configuration page. SQLite is created automatically. The administrator manages providers, model choices and local user accounts inside the platform. The listening address and database path can be supplied through environment variables when needed; no MySQL server is required.
+There is no separate setup wizard, setup token, or first-run configuration page. SQLite is created automatically. The administrator manages providers, knowledge bases, login methods and local accounts inside the platform. The listening address and database path can be supplied through environment variables when needed; no MySQL server is required.
 
 The console window is for service logs and shutdown. The EXE serves the embedded frontend directly; no frontend/ folder or separate web server is required.
 
 ## Linux deployment
 
-To build from source on Ubuntu 22.04/24.04, install Go 1.26+, Node.js 20.19+ and npm, then run `chmod +x build-linux.sh && ./build-linux.sh`. The script produces `dist/pingtai-linux-amd64` and, when `zip` is installed, `dist/pingtai-linux-amd64-release.zip`.
+To build from source on Ubuntu 22.04/24.04, install Go 1.26+, Node.js 20.19+, npm and (for PDF knowledge uploads) poppler-utils, then run `chmod +x build-linux.sh && ./build-linux.sh`. The script produces `dist/pingtai-linux-amd64` and, when `zip` is installed, `dist/pingtai-linux-amd64-release.zip`.
 
 Extract the ZIP on a Linux AMD64 host, then run:
 
        chmod +x pingtai-linux-amd64 manage-go.sh
        ./manage-go.sh start
 
-Open the platform address printed in the service log (default `http://127.0.0.1:5050`). On the first visit, create the first administrator account. No setup key, configuration link, or service restart is needed for initial account creation. After signing in, configure the model provider in **平台管理**. Restart the service after activating or changing the active model provider.
+Open the platform address printed in the service log (default `http://127.0.0.1:5050`). On the first visit, create the first administrator account. No setup key, configuration link, or service restart is needed for initial account creation. After signing in, configure the model provider in **平台管理 → 模型供应商**. You can also create knowledge bases and choose local-account or school SSO login in the same management area. Restart the service after activating or changing the active model provider.
 
 For systemd, use deploy/pingtai.service. The example uses systemd `StateDirectory=pingtai` to create `/var/lib/pingtai` with ownership for the service user; the SQLite database is stored at `/var/lib/pingtai/pingtai.db`. Use `systemctl restart pingtai` after activating or changing the active model provider.
 
@@ -79,6 +79,28 @@ The estimator is intentionally model-agnostic: ASCII text is budgeted at roughly
 ### Provider diagnostics
 
 The administrator page offers two explicit checks. **Test connection** calls the provider's `/models` endpoint and reports HTTP status, latency and model count without saving changes. **Test default model** sends a short Chat Completions request capped at 8 output tokens; the confirmation dialog warns that the upstream may charge for this request. Neither check returns or logs the provider API key.
+
+## Knowledge base management
+
+Open **平台管理 → 知识库管理** to create knowledge bases, upload documents, enable or disable them for chat, and publish a document-list version snapshot. Users can turn on **使用知识库** in the chat composer and select an enabled knowledge base; retrieval is applied to each message where the switch is enabled.
+
+Documents are stored and indexed locally in SQLite. The first implementation uses Chinese/English keyword matching over overlapping text chunks; it does not require an external embedding API and is not vector-semantic search. Supported uploads are TXT, MD, CSV, JSON, HTML, DOCX and PDF. PDF extraction uses Poppler's `pdftotext`; on Ubuntu install it with `sudo apt-get install poppler-utils`. If it is unavailable, PDF uploads return a clear extraction error rather than silently indexing empty content. DOCX is parsed directly by the Go application.
+
+## Login settings and school SSO
+
+Open **平台管理 → 登录设置** to switch between local account/password login and school unified identity authentication. Local accounts are retained when SSO is enabled, but local password login is disabled until the administrator switches the mode back to local. When SSO mode is active, unauthenticated visits to `/login` automatically redirect to the school identity center; successful authentication returns the user to the AI conversation page.
+
+The SSO implementation follows the OAuth2 authorization-code flow in the school integration guide:
+
+- Authorization: `GET {CAS_BASE_URL}/oauth2.0/authorize`
+- Code exchange: `POST {CAS_BASE_URL}/oauth2.0/token` with `grant_type=authorization_code`
+- Profile lookup: `GET {CAS_BASE_URL}/oauth2.0/profile?access_token=...`
+- Token renewal: `POST {CAS_BASE_URL}/oauth2.0/token` with `grant_type=refresh_token`
+- Logout: `{CAS_BASE_URL}/logout?service={SSO_SERVICE_URL}`
+
+Configure the CAS service URL (default `https://ids.zcvc.cn/cas`), the registered application access URL, Client ID, Client Secret, exact registered callback URL (default `https://your-domain/auth/sso/callback`), and one or more school administrator account identifiers. The application access URL and callback URL must first be registered by the school identity-platform administrator. The callback URL must exactly match the registered URL. Only the configured SSO administrator accounts can access platform-management APIs; other authenticated SSO users can use chat. The Client Secret is stored in SQLite and is never returned to the browser.
+
+The school profile parser accepts the documented `user_info` response object (including `account`, `useraccount` and `username`) as well as the older `user` response shape. The platform does not require SSO users to be pre-created as local password accounts.
 
 ## Configuration
 
@@ -135,7 +157,7 @@ The CTYun login page is not an API credential. Obtain the endpoint and credentia
 - GET /v1/models: upstream model listing. If the upstream returns 404/405 and a default model is configured, returns a list containing that model instead. Authentication/rate-limit failures are not hidden by this fallback.
 - /api/v1/chat/completions and /api/v1/models are equivalent aliases; /model/chat/completions is retained.
 - GET /api/health: process and database health.
-- Local authentication, conversation history and provider management are available under /auth, /agents and /admin. Knowledge-base and external-agent management are not exposed in this release.
+- Local authentication, conversation history, provider management, local knowledge-base management and school OAuth2 SSO are available under /auth, /agents and /admin. Knowledge documents and published version snapshots are stored in SQLite.
 
 Use `Authorization: Bearer <MODEL_API_KEY>` (or X-API-Key). A valid platform access token is also accepted. Invalid credentials return HTTP 401 with an OpenAI-style error object. Invalid OpenAI request JSON/messages return HTTP 400; upstream status, JSON response, SSE data and [DONE] markers pass through without vendor-specific wrapping. Retry-After is preserved for rate-limit responses. The maximum proxy request body is 10 MB.
 

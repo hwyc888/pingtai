@@ -94,3 +94,13 @@ func TestParseUserProfileFallbackAndMissingAccount(t *testing.T) {
 		t.Fatal("profile without a stable account identifier must be rejected")
 	}
 }
+
+func TestParseUserProfileSupportsSchoolUserInfoShape(t *testing.T) {
+	profile, err := ParseUserProfile([]byte("{\"service\":\"https://platform.example/\",\"id\":\"admin\",\"client_id\":\"client\",\"user_info\":{\"phone\":null,\"account\":\"admin\",\"useraccount\":\"admin\",\"email\":null,\"username\":\"系统管理员\"}}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Account != "admin" || profile.DisplayName != "系统管理员" || profile.ID != "admin" {
+		t.Fatalf("unexpected school profile: %#v", profile)
+	}
+}

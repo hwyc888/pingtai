@@ -14,6 +14,7 @@ type Config struct {
 	AuthMode           string
 	DatabasePath       string
 	SSOBaseURL         string
+	SSOServiceURL      string
 	SSOClientID        string
 	SSOClientSecret    string
 	SSORedirectURL     string
@@ -88,6 +89,7 @@ func Load() (Config, error) {
 		AuthMode:           strings.ToLower(env("AUTH_MODE", "local")),
 		DatabasePath:       env("PINGTAI_DB_PATH", DefaultDatabasePath()),
 		SSOBaseURL:         strings.TrimRight(env("SSO_BASE_URL", "https://ids.zcvc.cn/cas"), "/"),
+		SSOServiceURL:      strings.TrimSpace(os.Getenv("SSO_SERVICE_URL")),
 		SSOClientID:        strings.TrimSpace(os.Getenv("SSO_CLIENT_ID")),
 		SSOClientSecret:    strings.TrimSpace(os.Getenv("SSO_CLIENT_SECRET")),
 		SSORedirectURL:     strings.TrimSpace(os.Getenv("SSO_REDIRECT_URL")),
@@ -149,6 +151,12 @@ func (c Config) Validate() error {
 		redirect, err := url.Parse(c.SSORedirectURL)
 		if err != nil || redirect.Hostname() == "" || (redirect.Scheme != "https" && redirect.Scheme != "http") {
 			return errors.New("SSO_REDIRECT_URL must be a valid HTTP or HTTPS URL")
+		}
+		if service := strings.TrimSpace(c.SSOServiceURL); service != "" {
+			parsed, serviceErr := url.Parse(service)
+			if serviceErr != nil || parsed.Hostname() == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+				return errors.New("SSO_SERVICE_URL must be a valid HTTP or HTTPS URL")
+			}
 		}
 	}
 	if authMode == "sso" {

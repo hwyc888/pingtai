@@ -20,7 +20,7 @@ const signedInCookie = "pingtai_signed_in"
 
 func (h *Handler) SSOLogin(w http.ResponseWriter, r *http.Request) {
 	if !h.Config.SSOConfigured() {
-		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
 	}
 	var random [32]byte
@@ -56,11 +56,7 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	if providerError := r.URL.Query().Get("error"); providerError != "" {
 		clearSSOCookies(w, h.ssoSecure())
-		if returnTo == "/setup" || returnTo == "/setup/" {
-			http.Redirect(w, r, "/setup?sso_error=1", http.StatusSeeOther)
-		} else {
-			http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
-		}
+		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
 	}
 	stateCookie, err := r.Cookie(ssoStateCookie)
@@ -98,6 +94,23 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken, h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https"))
 	http.Redirect(w, r, returnTo, http.StatusSeeOther)
+}
+
+func (h *Handler) SSOLogout(w http.ResponseWriter, r *http.Request) {
+	clearAuthCookies(w, h.requestSecure(r))
+	w.Header().Set("Cache-Control", "no-store")
+	baseURL := strings.TrimRight(strings.TrimSpace(h.Config.SSOBaseURL), "/")
+	if baseURL == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	target := baseURL + "/logout"
+	if service := strings.TrimSpace(h.Config.SSOServiceURL); service != "" {
+		query := url.Values{}
+		query.Set("service", service)
+		target += "?" + query.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
@@ -198,12 +211,10 @@ func clearSSOCookies(w http.ResponseWriter, secure bool) {
 }
 
 func safeSSOReturnTo(value string) string {
-	switch value {
-	case "/setup", "/setup/":
+	if value == "/IntelligentAI" {
 		return value
-	default:
-		return "/IntelligentAI"
 	}
+	return "/IntelligentAI"
 }
 
 func (h *Handler) ssoIdentityFromRequest(r *http.Request) (middleware.Identity, bool) {

@@ -192,21 +192,23 @@ func (c *Client) RefreshToken(ctx context.Context, refreshToken string) (TokenRe
 }
 
 func ParseUserProfile(body []byte) (UserProfile, error) {
-	var payload struct {
+	type profileFields struct {
 		ID          string `json:"id"`
 		Account     string `json:"account"`
 		UserAccount string `json:"useraccount"`
 		Username    string `json:"username"`
 		Phone       string `json:"phone"`
 		Email       string `json:"email"`
-		User        *struct {
-			ID          string `json:"id"`
-			Account     string `json:"account"`
-			UserAccount string `json:"useraccount"`
-			Username    string `json:"username"`
-			Phone       string `json:"phone"`
-			Email       string `json:"email"`
-		} `json:"user"`
+	}
+	var payload struct {
+		ID          string         `json:"id"`
+		Account     string         `json:"account"`
+		UserAccount string         `json:"useraccount"`
+		Username    string         `json:"username"`
+		Phone       string         `json:"phone"`
+		Email       string         `json:"email"`
+		User        *profileFields `json:"user"`
+		UserInfo    *profileFields `json:"user_info"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return UserProfile{}, errors.New("SSO profile response is not valid JSON")
@@ -218,12 +220,16 @@ func ParseUserProfile(body []byte) (UserProfile, error) {
 		Phone:       strings.TrimSpace(payload.Phone),
 		Email:       strings.TrimSpace(payload.Email),
 	}
-	if payload.User != nil {
-		profile.Account = firstNonEmpty(payload.User.UserAccount, payload.User.Account, profile.Account, payload.User.ID)
-		profile.DisplayName = firstNonEmpty(payload.User.Username, profile.DisplayName)
-		profile.Phone = firstNonEmpty(payload.User.Phone, profile.Phone)
-		profile.Email = firstNonEmpty(payload.User.Email, profile.Email)
-		profile.ID = firstNonEmpty(payload.User.ID, profile.ID)
+	nested := payload.UserInfo
+	if nested == nil {
+		nested = payload.User
+	}
+	if nested != nil {
+		profile.Account = firstNonEmpty(nested.UserAccount, nested.Account, profile.Account, nested.ID)
+		profile.DisplayName = firstNonEmpty(nested.Username, profile.DisplayName)
+		profile.Phone = firstNonEmpty(nested.Phone, profile.Phone)
+		profile.Email = firstNonEmpty(nested.Email, profile.Email)
+		profile.ID = firstNonEmpty(nested.ID, profile.ID)
 	}
 	if profile.Account == "" {
 		return UserProfile{}, errors.New("SSO profile did not include a usable account identifier")

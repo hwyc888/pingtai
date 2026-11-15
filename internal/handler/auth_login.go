@@ -10,6 +10,10 @@ import (
 )
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	if h.Config.SSOConfigured() {
+		writeJSON(w, http.StatusForbidden, map[string]any{"errcode": 403, "errmsg": "当前已启用学校统一身份认证，请使用学校账号登录"})
+		return
+	}
 	if !h.parseForm(w, r) {
 		return
 	}
