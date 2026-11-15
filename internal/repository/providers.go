@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"strings"
 	"time"
 
@@ -196,13 +195,14 @@ func (r *ProviderRepository) UpdateModel(ctx context.Context, providerID int64, 
 	if enabled {
 		enabledValue = 1
 	}
-	result, err := r.db.ExecContext(ctx, "UPDATE ai_provider_model SET context_length=?,max_output_tokens=?,enabled=? WHERE provider_id=? AND model_id=?",
-		contextValue, outputValue, enabledValue, providerID, modelID)
-	if err != nil {
-		return err
-	}
-	if count, _ := result.RowsAffected(); count == 0 {
-		return errors.New("provider model not found")
-	}
-	return nil
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO ai_provider_model (provider_id,model_id,context_length,max_output_tokens,enabled,discovered_at)
+		VALUES (?,?,?,?,?,?)
+		ON CONFLICT(provider_id,model_id) DO UPDATE SET
+			context_length=excluded.context_length,
+			max_output_tokens=excluded.max_output_tokens,
+			enabled=excluded.enabled,
+			discovered_at=excluded.discovered_at
+	`, providerID, modelID, contextValue, outputValue, enabledValue, time.Now())
+	return err
 }

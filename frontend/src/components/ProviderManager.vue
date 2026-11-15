@@ -28,6 +28,7 @@ const successMessage = ref('')
 const presetSearch = ref('')
 const presetCategory = ref('全部')
 const modelSearch = ref('')
+const manualModelId = ref('')
 const showAdvanced = ref(false)
 const showApiKey = ref(false)
 const providerModels = ref([])
@@ -266,6 +267,52 @@ async function saveModels() {
     successMessage.value = '模型选择和默认模型已保存。'
   } catch (error) {
     errorMessage.value = error?.message || '保存模型设置失败'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function addManualModel() {
+  const modelID = manualModelId.value.trim()
+  if (!providerForm.value.id) {
+    errorMessage.value = '请先保存供应商配置。'
+    return
+  }
+  if (!modelID) {
+    errorMessage.value = '请输入模型 ID。'
+    return
+  }
+  if (providerModels.value.some((item) => item.model_id === modelID)) {
+    const existing = providerModels.value.find((item) => item.model_id === modelID)
+    existing.enabled = true
+    if (!providerForm.value.default_model) providerForm.value.default_model = modelID
+    manualModelId.value = ''
+    successMessage.value = '该模型已存在，已重新启用。'
+    return
+  }
+  saving.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  try {
+    await api.post('/admin/providers/models/update', {
+      provider_id: providerForm.value.id,
+      model_id: modelID,
+      context_length: null,
+      max_output_tokens: null,
+      enabled: true,
+    })
+    providerModels.value.push({
+      model_id: modelID,
+      context_length: null,
+      max_output_tokens: null,
+      enabled: true,
+    })
+    if (!providerForm.value.default_model) providerForm.value.default_model = modelID
+    manualModelId.value = ''
+    await loadProviders()
+    successMessage.value = '已添加模型 ' + modelID + '。'
+  } catch (error) {
+    errorMessage.value = error?.message || '添加模型失败'
   } finally {
     saving.value = false
   }
@@ -530,6 +577,13 @@ onMounted(load)
           <button class="admin-secondary" type="button" :disabled="saving" @click="saveProvider">仅保存配置</button>
           <button class="admin-secondary" type="button" :disabled="saving" @click="testConnection">测试连接</button>
           <button class="admin-primary" type="button" :disabled="saving" @click="discoverModels">{{ saving ? '处理中…' : '保存并获取模型' }}</button>
+        </div>
+        <div v-if="providerForm.id" class="pm-manual-model">
+          <div><strong>手动添加模型</strong><small>如果服务商没有提供 /models 接口，可以直接填写模型 ID。</small></div>
+          <div class="pm-manual-model-input">
+            <input v-model="manualModelId" placeholder="例如：deepseek-chat 或 qwen-plus" @keydown.enter.prevent="addManualModel" />
+            <button class="admin-secondary" type="button" :disabled="saving || !manualModelId.trim()" @click="addManualModel">添加模型</button>
+          </div>
         </div>
       </div>
 
