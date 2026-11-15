@@ -35,7 +35,7 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 6. Set the SQLite database file path if needed. The server creates the directory and database file, initializes tables, and writes pingtai-config.json next to the executable. No MySQL server or database account is required.
 7. Stop the current server (Ctrl+C or close its window), then double-click start.bat again. The saved configuration is loaded and the normal frontend opens.
 
-The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and sign in through the school unified identity service using an account listed in SSO_ADMIN_ACCOUNTS. Save and restart again to apply changes. If you change the listening port, use the new port after restart.
+The console window is only for service logs and shutdown, not configuration. To change settings later, open http://127.0.0.1:5050/setup and authenticate using the currently selected login mode (local administrator account or school SSO administrator account). Save and restart again to apply changes. If you change the listening port, use the new port after restart.
 
 The EXE serves the embedded frontend directly. No frontend/ folder is required.
 
@@ -57,7 +57,7 @@ For systemd, use deploy/pingtai.service. The example uses systemd `StateDirector
 
 ## Saved configuration and restart behavior
 
-- Web configuration is stored atomically in pingtai-config.json next to the executable, independent of the launch working directory. PINGTAI_CONFIG_FILE can select a different writable path; its parent directory must exist.
+- Web configuration is stored atomically in pingtai-config.json. By default it is next to the executable; PINGTAI_CONFIG_FILE can select another writable path. The systemd example stores it under /var/lib/pingtai.
 - The saved web configuration takes precedence over .env and environment variables, so old environment values cannot silently override changes made in the browser. Until the first web save, existing .env/environment configuration still works.
 - The file contains credentials. Keep it private, outside any externally served WEB_DIR, and back it up securely. On Unix it is created with owner-only permissions. On Windows restrict access to the deployment folder.
 - Saved passwords and keys are never sent back to the page. Blank secret inputs preserve existing values; explicit clear checkboxes remove them. Changing the JWT secret invalidates existing login tokens after restart.
