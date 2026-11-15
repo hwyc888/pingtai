@@ -7,7 +7,6 @@ import BrandMark from '../components/BrandMark.vue'
 const router = useRouter()
 const loading = ref(true)
 const saving = ref(false)
-const mode = ref('local')
 const users = ref([])
 const total = ref(0)
 const providers = ref([])
@@ -43,10 +42,6 @@ function assertProviderResponse(result) {
   return result
 }
 
-function openSetup() {
-  window.location.assign('/setup')
-}
-
 async function load() {
   loading.value = true
   errorMessage.value = ''
@@ -57,9 +52,7 @@ async function load() {
       errorMessage.value = '当前账号没有管理员权限。'
       return
     }
-    const modeResult = await api.get('/auth/mode', undefined, { auth: false })
-    mode.value = modeResult?.data?.mode || 'local'
-    await Promise.all([loadProviders(), mode.value === 'local' ? loadUsers() : Promise.resolve()])
+    await Promise.all([loadProviders(), loadUsers()])
   } catch (error) {
     errorMessage.value = error?.message || '无法加载管理数据'
   } finally {
@@ -127,7 +120,7 @@ async function saveProvider() {
     }))
     selectedProviderId.value = Number(result.data.id)
     providerForm.value.id = selectedProviderId.value
-    successMessage.value = '供应商配置已保存。'
+    successMessage.value = '供应商配置已保存。若修改当前默认供应商，请重新激活并重启服务。'
     await loadProviders()
   } catch (error) {
     errorMessage.value = error?.message || '保存供应商失败'
@@ -325,8 +318,6 @@ onMounted(load)
         <p class="admin-subtitle">管理员配置 AI 供应商、模型和用户账号；客户端无需选择模型。</p>
       </div>
       <div class="admin-header-actions">
-        <button class="admin-secondary" type="button" @click="router.push('/knowledge')">知识库管理</button>
-        <button class="admin-secondary" type="button" @click="openSetup">系统设置（登录/数据库）</button>
         <button class="admin-secondary" type="button" @click="router.push('/IntelligentAI')">返回对话</button>
       </div>
     </header>
@@ -339,14 +330,12 @@ onMounted(load)
       <section class="admin-card">
         <div class="admin-card-heading">
           <div>
-            <h2>登录认证</h2>
-            <p>当前登录方式由管理员配置，普通用户不需要选择登录系统。</p>
+            <h2>账户与权限</h2>
+            <p>第一个注册账户自动成为管理员；后续账户由管理员在这里创建和维护。</p>
           </div>
-          <span class="admin-mode">{{ mode === 'sso' ? '学校统一身份认证' : '本地账号密码' }}</span>
+          <span class="admin-mode">本地账号密码</span>
         </div>
-        <p v-if="mode === 'sso'" class="admin-note">当前使用学校 SSO。平台管理员由 SSO 账号白名单控制；如需调整认证凭据和白名单，请在系统设置页完成。</p>
-        <p v-else class="admin-note">当前使用本地账号。可在本页创建普通用户、管理员并重置密码。</p>
-        <p class="admin-note">AI 供应商、API Key、模型列表和默认模型统一在本页管理。首次初始化填写的 OpenAI 配置会自动导入，无需在系统设置中重复修改。</p>
+        <p class="admin-note">平台不再提供独立初始化页面。供应商、API Key、模型列表和默认模型统一在本页管理。</p>
       </section>
 
       <section class="admin-card">
@@ -412,7 +401,6 @@ onMounted(load)
         </div>
       </section>
 
-      <template v-if="mode === 'local'">
         <section class="admin-card">
           <div class="admin-card-heading">
             <div>
@@ -462,7 +450,6 @@ onMounted(load)
             <button class="admin-secondary" type="button" @click="resetUserId = 0">取消</button>
           </form>
         </section>
-      </template>
     </template>
   </main>
 </template>

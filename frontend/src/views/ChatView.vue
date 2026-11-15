@@ -7,18 +7,19 @@ import { clearAuth } from '../auth'
 import { copy } from '../copy'
 
 const router = useRouter()
-const username = ref(localStorage.getItem('username') || '\u7528\u6237')
+const username = ref(localStorage.getItem('username') || '用户')
 const isAdmin = ref(false)
-const workspaces = ref([])
-const bots = ref([])
-const activeWorkspaceId = ref('')
+const models = ref([])
 const selectedBot = ref(null)
 const conversationId = ref('')
 const messages = ref([])
+const conversations = ref([])
 const draft = ref('')
 const attachment = ref(null)
 const isSending = ref(false)
 const isLoading = ref(false)
+const historyLoading = ref(false)
+const historyError = ref('')
 const pageError = ref('')
 const showHistoryDrawer = ref(false)
 const messageList = ref(null)
@@ -42,30 +43,14 @@ function scrollToBottom() {
   })
 }
 
-async function loadWorkspaces() {
-  const result = await api.get('/datasets/workspacesList')
-  const data = assertSuccess(result)
-  workspaces.value = Array.isArray(data.workspaces) ? data.workspaces : []
-  return workspaces.value
-}
-
-async function loadBots(workspaceId) {
-  if (!workspaceId) {
-    bots.value = []
-    selectedBot.value = null
-    return []
+async function loadModels() {
+  const data = assertSuccess(await api.get('/agents/models'))
+  models.value = Array.isArray(data.models) ? data.models : []
+  const defaultModel = data.default_model
+  const preferred = models.value.find((item) => item.name === defaultModel) || models.value[0] || null
+  if (!models.value.some((item) => item.bot_id === selectedBot.value?.bot_id)) {
+    selectedBot.value = preferred
   }
-  const result = await api.get('/agents/getAgentsList', {
-    space_id: workspaceId,
-    page_num: 1,
-    page_size: 100,
-  })
-  const data = assertSuccess(result)
-  bots.value = Array.isArray(data.space_bots) ? data.space_bots : []
-  if (!bots.value.some((bot) => bot.bot_id === selectedBot.value?.bot_id)) {
-    selectedBot.value = bots.value[0] || null
-  }
-  return bots.value
 }
 
 async function createConversation() {
@@ -77,6 +62,19 @@ async function createConversation() {
   return data.id
 }
 
+async function loadConversationHistory() {
+  historyLoading.value = true
+  historyError.value = ''
+  try {
+    const data = assertSuccess(await api.get('/agents/listConversations', { limit: 100 }))
+    conversations.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    historyError.value = error?.message || '读取历史会话失败'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
 async function initialize() {
   isLoading.value = true
   pageError.value = ''
@@ -85,12 +83,9 @@ async function initialize() {
     username.value = profile.display_name || profile.account || '用户'
     isAdmin.value = Boolean(profile.is_admin)
     localStorage.setItem('username', username.value)
-    await loadWorkspaces()
-    if (workspaces.value.length) {
-      activeWorkspaceId.value = workspaces.value[0].id
-      await loadBots(activeWorkspaceId.value)
-    }
-    await createConversation()
+    await loadModels()
+    await loadConversationHistory()
+    if (selectedBot.value) await createConversation()
   } catch (error) {
     pageError.value = error?.message || copy.unavailable
   } finally {
@@ -106,6 +101,12 @@ function normalizeContent(value) {
   return value == null ? '' : JSON.stringify(value)
 }
 
+function formatDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+}
+
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
@@ -113,13 +114,13 @@ function wait(milliseconds) {
 async function pollForChat(chatId, assistantIndex) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
     if (disposed) return
-    await wait(1500)
+    await wait(attempt === 0 ? 400 : 1000)
     const detailResult = await api.get('/agents/getChatDetail', {
       conversation_id: conversationId.value,
       chat_id: chatId,
     })
     const detail = assertSuccess(detailResult)
-    if (detail.status === 'failed') throw new Error(copy.requestFailed)
+    if (detail.status === 'failed') throw new Error(detail.last_error || copy.requestFailed)
     if (detail.status === 'completed' || detail.status === 'success') {
       const messageResult = await api.get('/agents/getChatMessage', {
         conversation_id: conversationId.value,
@@ -147,11 +148,61 @@ function isImageFile(file) {
   return /\.(png|jpe?g)$/i.test(file?.name || '')
 }
 
+function selectModel(botID) {
+  selectedBot.value = models.value.find((item) => item.bot_id === botID) || null
+  pageError.value = ''
+}
+
+async function openConversation(item) {
+  if (isSending.value) return
+  historyError.value = ''
+  try {
+    const data = assertSuccess(await api.post('/agents/getMessageList', {
+      conversation_id: item.id,
+      order: 'asc',
+      limit: 100,
+    }))
+    const list = Array.isArray(data) ? data : []
+    messages.value = list
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: normalizeContent(message.content),
+        reasoning_content: normalizeContent(message.reasoning_content),
+        pending: false,
+      }))
+    conversationId.value = item.id
+    const matchingModel = models.value.find((model) => model.bot_id === item.bot_id)
+    if (matchingModel) selectedBot.value = matchingModel
+    showHistoryDrawer.value = false
+    pageError.value = ''
+    scrollToBottom()
+  } catch (error) {
+    historyError.value = error?.message || '打开历史会话失败'
+  }
+}
+
+async function deleteConversation(item) {
+  if (!window.confirm('确定删除这条历史对话吗？此操作不可撤销。')) return
+  try {
+    assertSuccess(await api.post('/agents/deleteConversation', { conversation_id: item.id }))
+    conversations.value = conversations.value.filter((entry) => entry.id !== item.id)
+    if (conversationId.value === item.id) {
+      conversationId.value = ''
+      messages.value = []
+      if (selectedBot.value) await createConversation()
+    }
+  } catch (error) {
+    historyError.value = error?.message || '删除历史对话失败'
+  }
+}
+
 async function sendMessage(text = draft.value, options = {}) {
   const content = String(text || '').trim()
   if (!content || isSending.value) return
   if (!selectedBot.value?.bot_id) {
-    pageError.value = copy.providerUnavailable
+    pageError.value = isAdmin.value ? '请先在平台管理中配置并启用一个模型。' : '平台暂未配置可用模型，请联系管理员。'
     return
   }
 
@@ -221,7 +272,7 @@ function handleFileChange(event) {
   event.target.value = ''
   if (!file) return
   const extension = file.name.split('.').pop().toLowerCase()
-  const allowed = ['doc', 'docx', 'txt', 'pdf', 'jpg', 'jpeg', 'png']
+  const allowed = ['txt', 'jpg', 'jpeg', 'png']
   if (!allowed.includes(extension)) {
     pageError.value = copy.uploadUnsupported
     return
@@ -269,10 +320,10 @@ async function startNewConversation() {
   attachment.value = null
   pageError.value = ''
   showHistoryDrawer.value = false
+  conversationId.value = ''
   try {
-    await createConversation()
+    if (selectedBot.value) await createConversation()
   } catch (error) {
-    conversationId.value = ''
     pageError.value = error?.message || copy.noConversation
   }
 }
@@ -299,7 +350,7 @@ onBeforeUnmount(() => {
       <button class="icon-button" type="button" :aria-label="copy.history" @click="showHistoryDrawer = true">&#9776;</button>
       <div class="chat-header-title">
         <BrandMark class="header-mark" />
-        <span>{{ copy.newChat }}</span>
+        <span>{{ selectedBot?.name || copy.newChat }}</span>
       </div>
       <button class="icon-button new-chat-button" type="button" :aria-label="copy.startNewChat" :disabled="isSending" @click="startNewConversation">+</button>
     </header>
@@ -309,6 +360,10 @@ onBeforeUnmount(() => {
         <BrandMark class="welcome-mark" />
         <h1>{{ copy.emptyTitle }}</h1>
         <p>{{ copy.emptyDescription }}</p>
+        <p v-if="!models.length" class="model-empty-hint">
+          {{ isAdmin ? '尚未配置模型，请先添加 API 供应商并启用模型。' : '平台尚未配置可用模型，请联系管理员。' }}
+        </p>
+        <button v-if="isAdmin && !models.length" class="admin-primary" type="button" @click="router.push('/admin')">前往平台管理</button>
       </div>
       <div v-if="isLoading" class="loading-state">{{ copy.loading }}</div>
 
@@ -339,6 +394,16 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
+      <div class="footer-toolbar">
+        <label class="model-select-label">
+          <span>模型</span>
+          <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
+            <option v-if="!models.length" value="">尚未配置模型</option>
+            <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
+          </select>
+        </label>
+        <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
+      </div>
       <div class="composer-shell">
         <div v-if="attachment" class="attachment-chip">
           <span class="attachment-icon">&#128196;</span>
@@ -355,28 +420,37 @@ onBeforeUnmount(() => {
         ></textarea>
         <div class="composer-actions">
           <label class="attach-button" :title="copy.attach">
-            <input type="file" accept=".doc,.docx,.txt,.pdf,.jpg,.jpeg,.png" :disabled="isSending" @change="handleFileChange" />
+            <input type="file" accept=".txt,.jpg,.jpeg,.png" :disabled="isSending" @change="handleFileChange" />
             <span aria-hidden="true">+</span>
           </label>
           <button class="send-button" type="button" :disabled="!canSend" :aria-label="copy.send" @click="sendMessage()">&#8593;</button>
         </div>
       </div>
-
     </footer>
 
     <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
       <aside class="history-drawer" :aria-label="copy.history">
         <button class="start-chat-button" type="button" :disabled="isSending" @click="startNewConversation">+ {{ copy.startNewChat }}</button>
-        <div class="history-empty-state">
-          <span class="history-empty-icon">&#128196;</span>
-          <strong>{{ copy.noHistory }}</strong>
-          <small>{{ copy.historyHint }}</small>
+        <div class="history-list">
+          <div v-if="historyLoading" class="history-status">{{ copy.loading }}</div>
+          <div v-else-if="historyError" class="history-status history-error">{{ historyError }}</div>
+          <div v-else-if="!conversations.length" class="history-empty-state">
+            <span class="history-empty-icon">&#128196;</span>
+            <strong>{{ copy.noHistory }}</strong>
+            <small>{{ copy.historyHint }}</small>
+          </div>
+          <div v-else v-for="item in conversations" :key="item.id" class="history-item" :class="{ active: item.id === conversationId }">
+            <button class="history-item-open" type="button" @click="openConversation(item)">
+              <strong>{{ item.title || copy.newChat }}</strong>
+              <small>{{ formatDate(item.updated_at) }}</small>
+            </button>
+            <button class="history-item-delete" type="button" :aria-label="'删除 ' + (item.title || copy.newChat)" @click="deleteConversation(item)">×</button>
+          </div>
         </div>
         <footer class="drawer-user">
           <span class="user-avatar">{{ usernameInitial }}</span>
           <strong>{{ username }}</strong>
-          <button v-if="isAdmin" type="button" @click="router.push('/knowledge')">知识库管理</button>
-          <button v-if="isAdmin" type="button" @click="router.push('/admin')">管理后台</button>
+          <button v-if="isAdmin" type="button" @click="router.push('/admin')">平台管理</button>
           <button type="button" @click="logout">{{ copy.logout }}</button>
         </footer>
       </aside>

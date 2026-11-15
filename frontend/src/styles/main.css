@@ -339,3 +339,17 @@ button:disabled { cursor: not-allowed; }
 /* Use the same platform AI mark in the header, welcome state and assistant messages. */
 .assistant-avatar { display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; overflow: hidden; border-radius: 13px; background: linear-gradient(135deg,#586bff 0%,#8b5cf6 100%); box-shadow: 0 8px 22px rgba(91,103,245,.18); }
 .assistant-avatar-mark { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.5px; line-height: 1; }
+
+
+/* Unified platform chat controls */
+.model-select-label { display: inline-flex; align-items: center; gap: 8px; color: #737d98; font-size: 11px; font-weight: 650; }
+.model-select-label select { max-width: min(62vw,340px); min-width: 150px; height: 32px; padding: 0 30px 0 12px; border: 1px solid #e3e7f2; border-radius: 999px; outline: none; color: #4d5874; font-size: 11px; background: rgba(255,255,255,.9); }
+.model-select-label select:focus { border-color: #aab6ff; box-shadow: 0 0 0 3px rgba(44,77,255,.08); }
+.model-current-hint { overflow: hidden; color: #a0a7b8; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.model-empty-hint { margin-top: 18px !important; color: #8b93aa !important; font-size: 12px !important; }
+.history-item-delete { flex: 0 0 28px; font-size: 17px; line-height: 1; }
+@media (max-width: 700px) {
+  .model-select-label { min-width: 0; flex: 1; }
+  .model-select-label select { min-width: 0; max-width: 100%; flex: 1; }
+  .model-current-hint { display: none; }
+}

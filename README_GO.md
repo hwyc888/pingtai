@@ -28,69 +28,37 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 ## Windows deployment
 
 1. Extract pingtai-release.zip to a writable directory.
-2. Double-click start.bat.
-3. The browser opens automatically. No Notepad or command-line configuration is needed.
-4. In the web wizard, keep the default local account mode or select school SSO. In local mode, create the initial administrator username and password.
-5. If SSO is selected, configure the OAuth2 client ID, client secret, exact registered callback URL and SSO administrator account identifier(s). A JWT signing secret is generated automatically when left blank. The first-run wizard can accept a legacy OpenAI-compatible model configuration; it is imported into SQLite provider management on the next startup.
-6. Set the SQLite database file path if needed. The server creates the directory and database file, initializes tables, and writes pingtai-config.json next to the executable. No MySQL server or database account is required.
-7. Stop the current server (Ctrl+C or close its window), then double-click start.bat again. The saved configuration is loaded and the normal frontend opens.
+2. Double-click start.bat. The platform starts and opens the normal login page.
+3. On the first visit, create the first administrator account. The first account in a new SQLite database is automatically assigned the administrator role.
+4. Sign in, open **平台管理**, add an OpenAI-compatible provider, enter its Base URL and API Key, discover models, select a default model, and activate the provider.
+5. Restart the service after activating or changing the active provider. Then start a new conversation and begin using the platform.
 
-The console window is only for service logs and shutdown, not configuration. After startup, manage AI providers, API keys, discovered models and the default model at /admin. Use /setup only for login authentication, SQLite path, listening address and system-level settings; these changes require a restart. If you change the listening port, use the new port after restart.
+There is no separate setup wizard, setup token, or first-run configuration page. SQLite is created automatically. The administrator manages providers, model choices and local user accounts inside the platform. The listening address and database path can be supplied through environment variables when needed; no MySQL server is required.
 
-The EXE serves the embedded frontend directly. No frontend/ folder is required.
+The console window is for service logs and shutdown. The EXE serves the embedded frontend directly; no frontend/ folder or separate web server is required.
 
 ## Linux deployment
 
 To build from source on Ubuntu 22.04/24.04, install Go 1.26+, Node.js 20.19+ and npm, then run `chmod +x build-linux.sh && ./build-linux.sh`. The script produces `dist/pingtai-linux-amd64` and, when `zip` is installed, `dist/pingtai-linux-amd64-release.zip`.
-
 
 Extract the ZIP on a Linux AMD64 host, then run:
 
        chmod +x pingtai-linux-amd64 manage-go.sh
        ./manage-go.sh start
 
-On first start (or when database/configuration initialization fails), the server stays running in setup mode and logs a private URL such as http://127.0.0.1:5050/setup#token=.... Open that exact URL in a browser. For a remote server, use HTTPS or an SSH tunnel; replace the hostname in the URL as appropriate. The setup key changes on every process start and is disabled after a successful save. Do not share this URL or its key.
+Open the platform address printed in the service log (default `http://127.0.0.1:5050`). On the first visit, create the first administrator account. No setup key, configuration link, or service restart is needed for initial account creation. After signing in, configure the model provider in **平台管理**. Restart the service after activating or changing the active model provider.
 
-Complete the same web wizard, stop and restart the process, then open the normal frontend. No terminal prompts are required. The optional `create-admin` command can create or reset a local administrator in SQLite.
+For systemd, use deploy/pingtai.service. The example uses systemd `StateDirectory=pingtai` to create `/var/lib/pingtai` with ownership for the service user; the SQLite database is stored at `/var/lib/pingtai/pingtai.db`. Use `systemctl restart pingtai` after activating or changing the active model provider.
 
-For systemd, use deploy/pingtai.service. The example uses systemd `StateDirectory=pingtai` to create `/var/lib/pingtai` with ownership for the service user; both `pingtai-config.json` and `pingtai.db` are stored there. The legacy `/etc/pingtai.env` is optional. Read the initial private link from the service journal, configure in the browser, then restart with `systemctl restart pingtai`.
+## Platform initialization and data
 
-## Saved configuration and restart behavior
-
-- Web configuration is stored atomically in pingtai-config.json. By default it is next to the executable; PINGTAI_CONFIG_FILE can select another writable path. The systemd example stores it under /var/lib/pingtai.
-- The saved web configuration takes precedence over .env and environment variables, so old environment values cannot silently override changes made in the browser. Until the first web save, existing .env/environment configuration still works.
-- The file contains credentials. Keep it private, outside any externally served WEB_DIR, and back it up securely. On Unix it is created with owner-only permissions. On Windows restrict access to the deployment folder.
-- Saved passwords and keys are never sent back to the page. Blank secret inputs preserve existing values; explicit clear checkboxes remove them. Changing the JWT secret invalidates existing login tokens after restart.
-- Existing active administrators are not reset by the wizard. Initial administrator fields are used only when the target database has no active administrator.
-- If validation or SQLite initialization fails, the existing saved file is not overwritten. If writing the file fails after table/admin initialization, those database changes remain; fix folder permissions and save again.
-- A successful save requires a manual service restart. Setup locks further configuration changes until that restart; an already-running application continues with its previous configuration.
-- A SQLite file or migration failure on restart opens protected recovery setup rather than terminating the process. Health requests return HTTP 503 until normal initialization succeeds.
-- Model credentials are optional for initial deployment. The page warns if the selected chat provider is incomplete; chat calls require working provider credentials and a reachable upstream service.
-
-## School unified identity authentication
-
-The web login uses the school's OAuth2 authorization-code flow described in the integration guide:
-
-1. The browser visits `/auth/sso/login` and is redirected to `https://ids.zcvc.cn/cas/oauth2.0/authorize`.
-2. The school returns a one-time authorization code to the registered callback.
-3. The Go server exchanges the code at `/oauth2.0/token` using a form-encoded POST.
-4. The server retrieves the user profile from `/oauth2.0/profile`, then issues its own short-lived access and refresh session cookies.
-5. The server refreshes the school's OAuth2 refresh token when the local access session is renewed. If the school refresh token is no longer valid, the user must sign in again.
-
-Register this exact callback URL with the school (replace the host with the public HTTPS address of this deployment):
-
-```
-https://your-pingtai-domain.example/auth/sso/callback
-```
-
-Set `SSO_CLIENT_ID`, `SSO_CLIENT_SECRET`, `SSO_REDIRECT_URL` and `SSO_ADMIN_ACCOUNTS` in the web setup page or environment. The redirect URL must exactly match the callback registered with the school. The default SSO base URL is `https://ids.zcvc.cn/cas`.
-
-The profile parser prefers `user.useraccount`, then `user.account`, then the top-level `id` as the stable account identifier. It uses `user.username` as the display name when present. The school guide's sample profile shows these fields; confirm the account identifier selected for your tenant with the school's SSO administrator.
-
-`SSO_ADMIN_ACCOUNTS` is a comma-, semicolon- or newline-separated allowlist of school SSO account identifiers. Only these accounts can access platform administration APIs and the protected setup page. Normal users can use the chat UI without a local account when SSO mode is selected. SQLite remains the platform's conversation and application-data store; it is not used to verify school passwords.
-
-The OAuth2 guide does not define a separate token-revocation endpoint or guarantee a global CAS logout callback for this flow. Logging out of pingtai clears the local platform session; the school's SSO session may remain active until the school expires or ends it.
-
+- The first visit checks whether the SQLite database contains any account. If it is empty, the login page displays the first-administrator registration form.
+- The first account is created atomically as an administrator. Once an account exists, public first-admin registration is permanently closed for that database.
+- A random JWT signing secret is generated automatically and stored in the SQLite `ai_platform_setting` table. No setup key or JWT secret needs to be copied into a web form.
+- Conversation history, users, provider credentials and platform settings are stored in SQLite. Provider API keys are never returned to the browser after saving.
+- The default database path is `data/pingtai.db` next to the executable. Set `PINGTAI_DB_PATH` to a writable persistent path for server deployments.
+- Protect the SQLite database and its backups; they contain account hashes, provider API keys and the platform signing secret.
+- Back up the database before replacing the executable. Database migrations are additive and do not delete conversation records.
 
 ## AI provider management
 
@@ -118,11 +86,11 @@ SQLite is the only runtime database. The server creates `data/pingtai.db` automa
 
 ### Generic OpenAI-compatible service (recommended)
 
-Open /admin and add an OpenAI-compatible provider. Enter the upstream Base URL and API key, save it, then discover models. Select the enabled models and choose a default model. Activate the provider and restart the service. The first-run OpenAI settings are imported automatically into this same provider list, so later model changes have one source of truth. Legacy CTYun/Coze deployments keep their existing configuration until migrated.
+Open /admin and add an OpenAI-compatible provider. Enter the upstream Base URL and API key, save it, then discover models. Select the enabled models and choose a default model. Activate the provider and restart the service. The first-run OpenAI-compatible environment settings are imported into this same provider list when available.
 
-Model discovery uses the current form's Base URL and key, without saving settings or requiring a database connection. A blank API key preserves the saved key; the explicit clear checkbox sends the discovery request without a key. Discovery requires the same setup key/administrator verification as configuration changes. It queries the upstream /models endpoint, has a 20-second timeout and accepts up to 4 MB of model-list JSON. If unsupported or denied, the page reports the failure without clearing your existing selections. You can manually add model IDs (one per line or comma-separated). The list also supports search, select-all and deselect-all; select-all includes all loaded models, not just the search results. Returned models may include non-chat models; only select models your provider supports for Chat Completions.
+Save the supplier details first, then use **Discover models**. Discovery uses the saved Base URL and API key, requires an authenticated administrator, has a 20-second timeout and accepts up to 4 MB of model-list JSON. If the upstream does not support /models or denies access, the page reports the failure without deleting the supplier configuration. The model list supports enable/disable and manual context/output-token metadata. Returned models may include non-chat models; only enable models that support Chat Completions.
 
-Selected models are saved in `OpenAIModels` in pingtai-config.json. After restart they appear as separate model/agent options in the built-in chat, with the default listed first. Selecting an option routes the next chat request to that exact model. Switching models in the same conversation retains the stored conversation history; it does not ask multiple models simultaneously. If the chosen model does not support the existing image/context format, start a new conversation or choose a compatible model. Existing single-model configurations continue working. An empty selection and empty default leave web chat unconfigured.
+Enabled models and the default model are stored with the provider in SQLite. After restart they appear in the built-in chat model selector, with the default selected first. Selecting another model routes the next message to that model while retaining the conversation history. If the chosen model does not support the existing image/context format, choose a compatible model. An empty model list leaves chat unavailable until an administrator configures a provider.
 
 This selection is for built-in web chat, not an API access-control allowlist. Standard /v1/models continues to return the upstream listing and API callers can provide any model supported by that upstream. The first selected model is used as default if no explicit default is set; otherwise the explicit default must be one of the selected models.
 
@@ -141,7 +109,7 @@ Equivalent environment values for deployments without a saved web configuration:
        CONTEXT_TURNS=20
        MODEL_API_KEY=your-platform-client-key
 
-The upstream API key is used only between this server and the provider. The separate MODEL_API_KEY is what clients use to call this platform. Configure it in the advanced web settings before connecting an OpenAI client.
+The upstream API key is used only between this server and the provider. The separate MODEL_API_KEY is what external clients use to call this platform. Set it in the service environment before connecting an OpenAI client.
 
 OPENAI_MAX_TOKENS and OPENAI_SYSTEM_PROMPT apply only to this platform's web chat. A zero output limit leaves the decision to the upstream (recommended for reasoning models and providers with different token-limit parameters). Standard API requests retain the caller's own generation parameters and system/developer messages.
 
@@ -167,7 +135,7 @@ The CTYun login page is not an API credential. Obtain the endpoint and credentia
 - GET /v1/models: upstream model listing. If the upstream returns 404/405 and a default model is configured, returns a list containing that model instead. Authentication/rate-limit failures are not hidden by this fallback.
 - /api/v1/chat/completions and /api/v1/models are equivalent aliases; /model/chat/completions is retained.
 - GET /api/health: process and database health.
-- Existing /auth, /agents and /datasets routes are retained.
+- Local authentication, conversation history and provider management are available under /auth, /agents and /admin. Knowledge-base and external-agent management are not exposed in this release.
 
 Use `Authorization: Bearer <MODEL_API_KEY>` (or X-API-Key). A valid platform access token is also accepted. Invalid credentials return HTTP 401 with an OpenAI-style error object. Invalid OpenAI request JSON/messages return HTTP 400; upstream status, JSON response, SSE data and [DONE] markers pass through without vendor-specific wrapping. Retry-After is preserved for rate-limit responses. The maximum proxy request body is 10 MB.
 
@@ -197,19 +165,15 @@ for chunk in client.chat.completions.create(
 - Standard /v1/chat/completions is stateless, as in OpenAI. The client sends the complete `messages` history each time. The platform does not invent a conversation ID, store these API messages, inject prompts or truncate them. System/developer/user/assistant/tool messages, tool_calls/tool_call_id, multimodal content arrays, tools, tool_choice, response_format, stream_options and provider extension parameters are preserved. Tool execution is the calling application's responsibility.
 - The built-in web chat uses authenticated `/agents` routes. Its conversation and messages are stored in SQLite and restored after service restart. Only successful completed turns are added to future model context; failed/in-progress requests and their error messages are excluded. Each conversation is scoped to its owning user.
 - CONTEXT_TURNS controls the number of complete previous web-chat turns (default 20). `0` sends all successful stored turns; 1-1000 sends only the most recent turns. This is a turn limit, not a tokenizer or an unlimited model context window. If input exceeds the upstream token window, reduce the history setting or start a new conversation. Standard API requests are not affected by this setting.
-- Web image attachments retain their structured image_url content in the new ai_message_context table, so subsequent turns can still refer to them. Existing historical images saved only as an image placeholder cannot be reconstructed. TXT attachment text is included in context; PDF/DOC parsing remains a Coze feature. Web chat displays text/reasoning, not an autonomous tool execution loop; use the standard API for tools and client-managed streaming.
+- Web image attachments retain their structured image_url content in the new ai_message_context table, so subsequent turns can still refer to them. Existing historical images saved only as an image placeholder cannot be reconstructed. TXT attachment text is included in context. Web chat displays text/reasoning, not an autonomous tool execution loop; use the standard API for tools and client-managed streaming.
 
 ### Verification
 
-`go test ./...` covers proxy paths, auth/error envelopes, parameter/context preservation and incremental SSE delivery. To run the real database setup/restart/context integration test, run `go test -count=1 -v ./cmd/pingtai`. The integration test creates an isolated temporary SQLite database and verifies initial web configuration, login, image-context persistence across reinitialization, whole-turn limits, failed-turn exclusion and conversation isolation.
+`go test ./...` covers proxy paths, auth/error envelopes, parameter/context preservation and incremental SSE delivery. The bootstrap tests verify that the first account is atomically created as administrator and that public first-admin registration closes after the first successful registration. Conversation repository tests verify history isolation and deletion.
 
 For the optional official Python SDK interoperability test, set PINGTAI_TEST_PYTHON to a Python executable with `openai` already installed, then run `go test -count=1 -v ./internal/httpapi`. It uses a local mock upstream to verify SDK completion, streaming, model listing, tool-call response parsing and typed errors. This does not require a paid provider or prove availability of any particular external vendor.
 
 ## Security
 
-Do not commit or share .env or pingtai-config.json. They contain JWT signing secrets, SSO client secrets and model API keys. The release ZIP only contains .env.example and never includes saved configuration or private setup links.
+Do not commit or share .env or the SQLite database. The database contains account password hashes, provider API keys and the platform JWT signing secret. Protect database backups and restrict file permissions.
 
-
-## Knowledge base versions
-
-Knowledge documents are stored and indexed by the configured Coze knowledge service. The platform can publish version records for a dataset after all its documents finish processing. Each version records the document list, processing state, publisher and release note at that time. The original files and search index remain in Coze; these records are an audit snapshot, not a binary backup or one-click rollback. OpenAI-compatible chat requests do not automatically query Coze datasets; associate a dataset with a Coze agent when using the Coze agent chat path.

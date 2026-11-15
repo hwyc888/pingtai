@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -11,7 +14,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -24,9 +26,7 @@ import (
 	"pingtai/internal/repository"
 	authservice "pingtai/internal/service/auth"
 	"pingtai/internal/service/coze"
-	"pingtai/internal/service/ctyun"
 	"pingtai/internal/service/openai"
-	"pingtai/internal/setup"
 )
 
 func main() {
@@ -36,57 +36,35 @@ func main() {
 }
 
 func run() error {
-	cfg, startupError := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load platform configuration: %w", err)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "create-admin" {
-		if startupError != nil {
-			return startupError
-		}
 		return runCreateAdmin(cfg, os.Args[2:])
 	}
-	if startupError != nil {
-		cfg = config.Defaults()
-	}
-	_, portText, addressError := net.SplitHostPort(cfg.Addr)
-	listenPort, portError := strconv.Atoi(portText)
-	if addressError != nil || portError != nil || listenPort < 1 || listenPort > 65535 {
-		startupError = errors.New("invalid HTTP address; using :5050 for setup")
-		cfg.Addr = ":5050"
-	}
-	if startupError == nil {
-		startupError = cfg.Validate()
-	}
+
+	// Platform-local accounts and OpenAI-compatible providers are managed in the UI.
+	cfg.AuthMode = "local"
+	cfg.SSOBaseURL = ""
+	cfg.SSOClientID = ""
+	cfg.SSOClientSecret = ""
+	cfg.SSORedirectURL = ""
+	cfg.SSOAdminAccounts = ""
+	cfg.ChatProvider = "openai"
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	var app http.Handler
-	var configuration *setup.Handler
-	if startupError == nil {
-		var cleanup func()
-		app, configuration, cleanup, startupError = buildApplication(ctx, cfg)
-		if cleanup != nil {
-			defer cleanup()
-		}
+	app, cleanup, err := buildApplication(ctx, cfg)
+	if err != nil {
+		return err
 	}
-	if startupError != nil {
-		log.Printf("Application is not ready; starting web setup: %v", startupError)
-		configuration = setup.New(cfg, nil)
-		app = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet && r.URL.Path == "/" {
-				http.Redirect(w, r, "/setup", http.StatusSeeOther)
-				return
-			}
-			http.Error(w, "Configuration required. Open /setup.", http.StatusServiceUnavailable)
-		})
-	}
+	defer cleanup()
 
-	root := http.NewServeMux()
-	root.Handle("/setup", configuration)
-	root.Handle("/setup/", configuration)
-	root.Handle("/", app)
 	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           root,
+		Handler:           app,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -95,16 +73,13 @@ func run() error {
 		return err
 	}
 	address := browserAddress(listener.Addr().String())
-	if token := configuration.BootstrapToken(); token != "" {
-		address += "/setup#token=" + token
-		log.Printf("Web setup link (private, valid for this process only): %s", address)
-		log.Printf("For remote setup, replace the host with your server address and use HTTPS or an SSH tunnel.")
-	} else {
-		log.Printf("Platform: %s ; administrator configuration: %s/setup", address, address)
-	}
+	log.Printf("PINGTAI platform: %s", address)
+	log.Printf("First visit: create the administrator account in the browser.")
+	log.Printf("SQLite database: %s", cfg.DatabasePath)
+
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("Go platform listening on %s (chat provider: %s)", cfg.Addr, cfg.ChatProvider)
+		log.Printf("Go platform listening on %s", cfg.Addr)
 		serverErrors <- server.Serve(listener)
 	}()
 	if runtime.GOOS == "windows" && len(os.Args) > 1 && os.Args[1] == "--open-browser" {
@@ -129,36 +104,32 @@ func run() error {
 	}
 }
 
-func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *setup.Handler, func(), error) {
+func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, func(), error) {
 	db, err := database.Open(ctx, cfg.DatabasePath)
 	if err != nil {
-		return nil, nil, nil, errors.New("cannot open SQLite database; check the SQLite file path and directory permissions in /setup")
+		return nil, nil, fmt.Errorf("cannot open SQLite database at %q: %w", cfg.DatabasePath, err)
 	}
 	cleanup := func() { _ = db.Close() }
 	if err := database.Migrate(ctx, db); err != nil {
 		cleanup()
-		return nil, nil, nil, errors.New("SQLite database migration failed; check the database file and directory permissions")
+		return nil, nil, fmt.Errorf("SQLite database migration failed: %w", err)
 	}
-	if !cfg.SSOConfigured() {
-		var admins int
-		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_user WHERE usertype=1 AND status=1 AND COALESCE(deltag,0)=0").Scan(&admins); err != nil {
-			cleanup()
-			return nil, nil, nil, errors.New("cannot read administrator records")
-		}
-		if admins == 0 {
-			cleanup()
-			return nil, nil, nil, errors.New("create the first administrator in web setup")
-		}
+	if err := ensureJWTSecret(ctx, db, &cfg); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("cannot initialize platform authentication secret: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("invalid platform configuration: %w", err)
+	}
+
 	providers := repository.NewProviderRepository(db)
 	if err := importLegacyProvider(ctx, cfg, providers); err != nil {
 		cleanup()
-		return nil, nil, nil, errors.New("cannot migrate legacy AI provider configuration")
+		return nil, nil, errors.New("cannot migrate legacy AI provider configuration")
 	}
-	providerManaged := false
 	cfg.ModelContextTokens = 0
 	if active, models, providerErr := providers.Active(ctx); providerErr == nil {
-		providerManaged = true
 		cfg.ChatProvider = "openai"
 		cfg.OpenAIBaseURL = active.BaseURL
 		cfg.OpenAIAPIKey = active.APIKey
@@ -178,91 +149,46 @@ func buildApplication(ctx context.Context, cfg config.Config) (http.Handler, *se
 				}
 			}
 		}
-	} else if errors.Is(providerErr, sql.ErrNoRows) {
-		existing, listErr := providers.List(ctx)
-		if listErr != nil {
-			cleanup()
-			return nil, nil, nil, errors.New("cannot load AI providers from SQLite")
-		}
-		providerManaged = len(existing) > 0
-	} else {
+	} else if !errors.Is(providerErr, sql.ErrNoRows) {
 		cleanup()
-		return nil, nil, nil, errors.New("cannot load active AI provider from SQLite")
+		return nil, nil, errors.New("cannot load active AI provider from SQLite")
 	}
+
 	users := repository.NewUserRepository(db)
 	chats := repository.NewChatRepository(db)
 	auth := authservice.NewService(users, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
-	var modelClient handler.ModelClient = ctyun.NewClient(cfg)
-	if cfg.ChatProvider == "openai" {
-		modelClient = openai.NewClient(cfg)
-	}
+	modelClient := openai.NewClient(cfg)
 	appHandler := handler.New(&cfg, db, users, chats, auth, coze.NewClient(cfg), modelClient)
-	return httpapi.NewRouter(&cfg, appHandler), setup.NewWithProviderState(cfg, auth, providerManaged), cleanup, nil
+	return httpapi.NewRouter(&cfg, appHandler), cleanup, nil
 }
 
-func importLegacyProvider(ctx context.Context, cfg config.Config, providers *repository.ProviderRepository) error {
-	if cfg.ChatProvider != "openai" {
+func ensureJWTSecret(ctx context.Context, db *sql.DB, cfg *config.Config) error {
+	var stored string
+	err := db.QueryRowContext(ctx, "SELECT setting_value FROM ai_platform_setting WHERE setting_key='jwt_secret'").Scan(&stored)
+	if err == nil && strings.TrimSpace(stored) != "" {
+		cfg.JWTSecret = stored
 		return nil
 	}
-	if _, _, err := providers.Active(ctx); err == nil {
-		return nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	existing, err := providers.List(ctx)
+
+	secret := strings.TrimSpace(cfg.JWTSecret)
+	if len(secret) < 32 {
+		randomBytes := make([]byte, 48)
+		if _, err := rand.Read(randomBytes); err != nil {
+			return err
+		}
+		secret = base64.RawURLEncoding.EncodeToString(randomBytes)
+	}
+	_, err = db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO ai_platform_setting (setting_key, setting_value, updated_at)
+		VALUES ('jwt_secret', ?, CURRENT_TIMESTAMP)
+	`, secret)
 	if err != nil {
 		return err
 	}
-	if len(existing) > 0 {
-		return nil
-	}
-	defaultModel := cfg.DefaultModel()
-	if defaultModel == "" {
-		return nil
-	}
-	baseURL := cfg.OpenAIBaseURL
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
-	}
-	timeout := int(cfg.OpenAITimeout.Seconds())
-	if timeout < 1 {
-		timeout = 180
-	}
-	id, err := providers.Save(ctx, model.Provider{
-		Name: "从初始化配置迁移",
-		BaseURL: baseURL,
-		APIKey: cfg.OpenAIAPIKey,
-		Protocol: "openai",
-		DefaultModel: defaultModel,
-		MaxOutputTokens: cfg.OpenAIMaxTokens,
-		TimeoutSeconds: timeout,
-		SystemPrompt: cfg.OpenAISystemPrompt,
-	})
-	if err != nil {
-		return err
-	}
-	modelIDs := append([]string(nil), cfg.OpenAIModels...)
-	foundDefault := false
-	for _, modelID := range modelIDs {
-		if modelID == defaultModel {
-			foundDefault = true
-			break
-		}
-	}
-	if !foundDefault {
-		modelIDs = append([]string{defaultModel}, modelIDs...)
-	}
-	models := make([]model.ProviderModel, 0, len(modelIDs))
-	for _, modelID := range modelIDs {
-		if strings.TrimSpace(modelID) == "" {
-			continue
-		}
-		models = append(models, model.ProviderModel{ProviderID: id, ModelID: modelID, Enabled: true})
-	}
-	if err := providers.ReplaceModels(ctx, id, models); err != nil {
-		return err
-	}
-	return providers.Activate(ctx, id)
+	return db.QueryRowContext(ctx, "SELECT setting_value FROM ai_platform_setting WHERE setting_key='jwt_secret'").Scan(&cfg.JWTSecret)
 }
 
 func browserAddress(address string) string {

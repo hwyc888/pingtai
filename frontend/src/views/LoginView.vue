@@ -6,60 +6,69 @@ import BrandMark from '../components/BrandMark.vue'
 
 const busy = ref(false)
 const loading = ref(true)
-const mode = ref('local')
+const needsAdmin = ref(false)
 const errorMessage = ref('')
+const username = ref('')
+const password = ref('')
+const confirmPassword = ref('')
 
-async function loadMode() {
+async function loadBootstrapStatus() {
+  loading.value = true
+  errorMessage.value = ''
   try {
-    const result = await api.get('/auth/mode', undefined, { auth: false })
-    mode.value = result?.data?.mode === 'sso' ? 'sso' : 'local'
-  } catch {
-    errorMessage.value = copy.loginModeUnavailable
+    const result = await api.get('/auth/bootstrap/status', undefined, { auth: false })
+    if (Number(result?.code) !== 0) throw new Error(result?.msg || '无法读取平台状态')
+    needsAdmin.value = Boolean(result?.data?.needs_admin)
+  } catch (error) {
+    errorMessage.value = error?.message || '暂时无法连接平台，请稍后重试。'
   } finally {
     loading.value = false
   }
 }
 
-async function loginLocal(event) {
+async function submit(event) {
   event.preventDefault()
   if (busy.value) return
-  const form = new FormData(event.currentTarget)
-  const username = String(form.get('username') || '').trim()
-  const password = String(form.get('password') || '')
-  if (!username || !password) {
-    errorMessage.value = copy.credentialsRequired
+  const account = username.value.trim()
+  if (!account || !password.value) {
+    errorMessage.value = '请输入账号和密码。'
     return
   }
+  if (needsAdmin.value && password.value !== confirmPassword.value) {
+    errorMessage.value = '两次输入的密码不一致。'
+    return
+  }
+  if (needsAdmin.value && password.value.length < 8) {
+    errorMessage.value = '管理员密码至少需要 8 位。'
+    return
+  }
+
   busy.value = true
   errorMessage.value = ''
   try {
-    const body = new URLSearchParams({ username, password }).toString()
-    const result = await api.post('/auth/login', body, {
-      auth: false,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    })
-    if (Number(result?.errcode) !== 200) throw new Error(result?.errmsg || copy.loginFailed)
+    if (needsAdmin.value) {
+      const result = await api.post('/auth/bootstrap/register', {
+        username: account,
+        password: password.value,
+      }, { auth: false })
+      if (Number(result?.code) !== 0) throw new Error(result?.msg || '管理员创建失败')
+    } else {
+      const body = new URLSearchParams({ username: account, password: password.value }).toString()
+      const result = await api.post('/auth/login', body, {
+        auth: false,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
+      if (Number(result?.errcode) !== 200) throw new Error(result?.errmsg || copy.loginFailed)
+    }
     window.location.assign('/IntelligentAI')
   } catch (error) {
-    errorMessage.value = error?.message || copy.loginFailed
+    errorMessage.value = error?.message || (needsAdmin.value ? '创建管理员失败，请重试。' : copy.loginFailed)
     busy.value = false
+    if (needsAdmin.value) await loadBootstrapStatus()
   }
 }
 
-function loginSSO() {
-  if (busy.value) return
-  busy.value = true
-  window.location.assign('/auth/sso/login')
-}
-
-onMounted(async () => {
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('sso_error') === '1') {
-    errorMessage.value = copy.ssoLoginError
-    window.history.replaceState(null, '', window.location.pathname)
-  }
-  await loadMode()
-})
+onMounted(loadBootstrapStatus)
 </script>
 
 <template>
@@ -67,30 +76,38 @@ onMounted(async () => {
     <section class="login-card" aria-labelledby="login-title">
       <BrandMark class="login-brand-mark" />
       <p class="login-eyebrow">{{ copy.appName }}</p>
-      <h1 id="login-title">{{ copy.loginTitle }}</h1>
-      <p class="login-subtitle">{{ mode === 'sso' ? copy.ssoLoginHint : copy.loginSubtitle }}</p>
+      <h1 id="login-title">{{ needsAdmin ? '创建平台管理员' : copy.loginTitle }}</h1>
+      <p class="login-subtitle">
+        {{ needsAdmin ? '平台已就绪，请创建第一个管理员账户。此账户将拥有平台管理权限。' : copy.loginSubtitle }}
+      </p>
 
       <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
       <p v-if="loading" class="login-subtitle">{{ copy.loading }}</p>
 
-      <form v-else-if="mode === 'local'" class="login-form" @submit="loginLocal">
+      <form v-else class="login-form" @submit="submit">
         <label class="field-label" for="username">{{ copy.username }}</label>
-        <input id="username" name="username" class="login-input" autocomplete="username" :placeholder="copy.usernamePlaceholder" required />
+        <input id="username" v-model="username" name="username" class="login-input"
+          autocomplete="username" :placeholder="copy.usernamePlaceholder" maxlength="50" required />
+
         <label class="field-label" for="password">{{ copy.password }}</label>
-        <input id="password" name="password" class="login-input" type="password" autocomplete="current-password" :placeholder="copy.passwordPlaceholder" required />
+        <input id="password" v-model="password" name="password" class="login-input" type="password"
+          :autocomplete="needsAdmin ? 'new-password' : 'current-password'"
+          :placeholder="needsAdmin ? '至少 8 位' : copy.passwordPlaceholder" minlength="8" maxlength="72" required />
+
+        <template v-if="needsAdmin">
+          <label class="field-label" for="confirm-password">确认密码</label>
+          <input id="confirm-password" v-model="confirmPassword" class="login-input" type="password"
+            autocomplete="new-password" placeholder="再次输入密码" minlength="8" maxlength="72" required />
+        </template>
+
         <button class="login-submit" type="submit" :disabled="busy">
           <span v-if="busy" class="button-spinner" aria-hidden="true"></span>
-          {{ busy ? copy.loggingIn : copy.login }}
+          {{ busy ? (needsAdmin ? '正在创建…' : copy.loggingIn) : (needsAdmin ? '创建管理员并进入平台' : copy.login) }}
         </button>
       </form>
 
-      <button v-else class="login-submit" type="button" :disabled="busy" @click="loginSSO">
-        <span v-if="busy" class="button-spinner" aria-hidden="true"></span>
-        {{ busy ? copy.loggingIn : copy.ssoLogin }}
-      </button>
-
       <div class="agreement-row">
-        <span>{{ mode === 'sso' ? copy.ssoLoginFooter : copy.localLoginFooter }}</span>
+        <span>{{ needsAdmin ? '首个注册账户自动成为管理员；后续账户由管理员创建。' : '账号由平台管理员创建和管理。' }}</span>
       </div>
     </section>
     <p class="login-footer">{{ copy.appName }}</p>

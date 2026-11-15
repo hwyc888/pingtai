@@ -11,8 +11,9 @@ if not exist "pingtai.exe" (
 
 echo Starting pingtai...
 echo Working directory: %CD%
-echo The browser will open automatically. Configure the server on the web page.
-echo After saving configuration, stop and start this launcher again to apply it.
+echo The browser will open automatically.
+echo On first visit, create the first administrator account.
+echo Manage AI providers and models from the platform admin page.
 echo Press Ctrl+C to stop the server.
 echo.
 pingtai.exe --open-browser
@@ -21,7 +22,7 @@ set "APP_EXIT=%ERRORLEVEL%"
 if not "%APP_EXIT%"=="0" (
     echo.
     echo [ERROR] pingtai exited with code %APP_EXIT%.
-    echo Check the listening port and folder permissions. Configuration is available at /setup.
+    echo Check the listening port, SQLite database path and folder permissions.
     pause
 )
 
