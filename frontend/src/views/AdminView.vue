@@ -183,7 +183,7 @@ async function activateProvider() {
   saving.value = true
   errorMessage.value = ''
   try {
-    assertProviderResponse(await api.post('/admin/providers/activate', { id: selectedProviderId.value }))
+    assertProviderResponse(await api.post('/admin/providers/activate', { id: selectedProviderId.value, default_model: providerForm.value.default_model }))
     successMessage.value = '默认供应商已切换。请重启 pingtai 服务后生效。'
     await loadProviders()
   } catch (error) {

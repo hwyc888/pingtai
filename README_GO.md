@@ -91,6 +91,17 @@ The profile parser prefers `user.useraccount`, then `user.account`, then the top
 
 The OAuth2 guide does not define a separate token-revocation endpoint or guarantee a global CAS logout callback for this flow. Logging out of pingtai clears the local platform session; the school's SSO session may remain active until the school expires or ends it.
 
+
+## AI provider management
+
+After the first administrator signs in, open `/admin` to manage AI providers. Add one or more OpenAI-compatible providers with a display name, Base URL and API key. Save a provider, then use **Discover models** to request its `/models` endpoint. The platform stores the returned model IDs and recognizes common optional context metadata fields such as `context_length`, `context_window`, `max_model_len` and `max_input_tokens`.
+
+Some OpenAI-compatible services return only model IDs. In that case, context length and output limits remain unknown until an administrator enters them manually. The platform does not invent missing context values. Context length is stored as provider metadata; automatic token counting and context-window truncation are separate runtime work and are not implied by a model-list response.
+
+Choose an enabled default model and activate the provider. The active provider is loaded from SQLite when the Go process starts, so restart the service after switching providers. Chat clients use this platform default model automatically; they do not see or select provider/model credentials.
+
+Provider API keys are stored in the SQLite database file. The database is created with owner-only file permissions (0600) and the systemd example keeps it under `/var/lib/pingtai`, owned by the service account. Protect database backups as secrets.
+
 ## Configuration
 
 SQLite is the only runtime database. The server creates `data/pingtai.db` automatically (or the configured `PINGTAI_DB_PATH`) and applies non-destructive `CREATE TABLE IF NOT EXISTS` migrations. SQLite runs in WAL mode with a busy timeout; the database file and its directory must be writable by the service account. Stop the service before taking a simple file copy backup so the WAL is checkpointed.

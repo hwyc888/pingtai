@@ -121,12 +121,20 @@ func (h *Handler) ActivateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := int64(intValue(payload["id"], 0))
-	item, err := h.providerRepository().Get(r.Context(), id)
+	repo := h.providerRepository()
+	item, err := repo.Get(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "供应商不存在")
 		return
 	}
-	models, err := h.providerRepository().Models(r.Context(), id, true)
+	if selectedDefault := strings.TrimSpace(stringValue(payload["default_model"])); selectedDefault != "" && selectedDefault != item.DefaultModel {
+		item.DefaultModel = selectedDefault
+		if _, err := repo.Save(r.Context(), item); err != nil {
+			writeError(w, http.StatusBadRequest, "保存默认模型失败")
+			return
+		}
+	}
+	models, err := repo.Models(r.Context(), id, true)
 	if err != nil || len(models) == 0 {
 		writeError(w, http.StatusBadRequest, "请先获取模型并至少启用一个模型")
 		return
@@ -141,7 +149,7 @@ func (h *Handler) ActivateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "默认模型必须是已启用的模型")
 		return
 	}
-	if err := h.providerRepository().Activate(r.Context(), id); err != nil {
+	if err := repo.Activate(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "启用供应商失败")
 		return
 	}
