@@ -12,17 +12,45 @@ function Invoke-Go {
 }
 
 $FrontendSource = Join-Path $Root "frontend"
+$FrontendDist = Join-Path $FrontendSource "dist"
 $EmbeddedWeb = Join-Path $Root "internal\httpapi\web"
-if (!(Test-Path (Join-Path $FrontendSource "index.html"))) {
-    throw "Frontend entry not found: $FrontendSource\index.html"
+if (!(Test-Path (Join-Path $FrontendSource "package.json"))) {
+    throw "Frontend package.json not found: $FrontendSource"
+}
+if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "Node.js and npm are required to build the Vue frontend. Install Node.js 20.19 or newer."
+}
+
+Push-Location $FrontendSource
+try {
+    if (Test-Path (Join-Path $FrontendSource "package-lock.json")) {
+        & npm ci --no-audit --no-fund
+    }
+    else {
+        & npm install --no-audit --no-fund
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm dependency installation failed with exit code $LASTEXITCODE"
+    }
+
+    & npm run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm run build failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Pop-Location
+}
+
+if (!(Test-Path (Join-Path $FrontendDist "index.html"))) {
+    throw "Frontend build output not found: $FrontendDist\index.html"
 }
 
 if (Test-Path $EmbeddedWeb) {
     Remove-Item -LiteralPath $EmbeddedWeb -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $EmbeddedWeb | Out-Null
-Get-ChildItem -Force $FrontendSource |
-    Where-Object { $_.Name -notin @("node_modules", ".git", ".env") } |
+Get-ChildItem -Force $FrontendDist |
     Copy-Item -Destination $EmbeddedWeb -Recurse -Force
 
 Invoke-Go @("mod", "tidy")

@@ -2,15 +2,16 @@
 
 ## Release package
 
-The frontend is embedded into both Go executables with the Go embed feature. The release does not need a separate frontend directory, Node.js, or a web server to serve static files.
+The editable frontend source is a Vue 3 application in frontend/. The built HTML, JavaScript, CSS and images are embedded into both Go executables with the Go embed feature. The release does not need Node.js or a separate web server at runtime. Building from source requires Node.js 20.19 or newer and npm.
 
 Run .\build.ps1 in the project root. It:
 
-1. Copies the current frontend/ files into the Go embed source.
-2. Runs gofmt, go test ./... and go vet ./....
-3. Builds the Windows AMD64 and Linux AMD64 executables.
-4. Packages runtime configuration, startup scripts and deployment files.
-5. Creates dist/pingtai-release.zip.
+1. Installs frontend dependencies and runs the Vite production build in frontend/.
+2. Copies frontend/dist/ into the Go embed source at internal/httpapi/web/.
+3. Runs gofmt, go test ./... and go vet ./....
+4. Builds the Windows AMD64 and Linux AMD64 executables.
+5. Packages runtime configuration, startup scripts and deployment files.
+6. Creates dist/pingtai-release.zip.
 
 The ZIP contains:
 
