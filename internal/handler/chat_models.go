@@ -1,16 +1,36 @@
 package handler
 
-import "net/http"
+import (
+	"database/sql"
+	"errors"
+	"net/http"
+)
 
 func (h *Handler) ListChatModels(w http.ResponseWriter, r *http.Request) {
-	models := h.Config.WebModels()
-	defaultModel := h.Config.DefaultModel()
-	items := make([]map[string]any, 0, len(models))
-	for _, model := range models {
+	cfg, providerModels, err := h.activeChatProvider(r.Context())
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errNoActiveChatProvider) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"code": 0,
+			"data": map[string]any{
+				"models": []any{},
+				"default_model": "",
+				"configured": false,
+			},
+		})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取当前模型供应商失败")
+		return
+	}
+
+	defaultModel := cfg.DefaultModel()
+	items := make([]map[string]any, 0, len(providerModels))
+	for _, item := range providerModels {
 		items = append(items, map[string]any{
-			"bot_id": modelBotID(model),
-			"name": model,
-			"default": model == defaultModel,
+			"bot_id": modelBotID(item.ModelID),
+			"name": item.ModelID,
+			"default": item.ModelID == defaultModel,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

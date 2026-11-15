@@ -21,12 +21,13 @@ const isLoading = ref(false)
 const historyLoading = ref(false)
 const historyError = ref('')
 const pageError = ref('')
+const showNoProviderModal = ref(false)
 const showHistoryDrawer = ref(false)
 const messageList = ref(null)
 let disposed = false
 
 const usernameInitial = computed(() => (username.value || 'U').trim().slice(0, 1).toUpperCase())
-const canSend = computed(() => !isSending.value && Boolean(draft.value.trim()) && Boolean(selectedBot.value))
+const canSend = computed(() => !isSending.value && Boolean(draft.value.trim()))
 
 function assertSuccess(result) {
   if (result?.error) throw new Error(result.msg || copy.requestFailed)
@@ -201,13 +202,24 @@ async function deleteConversation(item) {
 async function sendMessage(text = draft.value, options = {}) {
   const content = String(text || '').trim()
   if (!content || isSending.value) return
-  if (!selectedBot.value?.bot_id) {
-    pageError.value = isAdmin.value ? '请先在平台管理中配置并启用一个模型。' : '平台暂未配置可用模型，请联系管理员。'
+
+  isSending.value = true
+  pageError.value = ''
+  try {
+    // Refresh on send as well as on page load, so a provider activated in
+    // another tab becomes available without a browser or service restart.
+    await loadModels()
+  } catch (error) {
+    pageError.value = error?.message || copy.requestFailed
+    isSending.value = false
     return
   }
-
-  pageError.value = ''
-  isSending.value = true
+  if (!selectedBot.value?.bot_id) {
+    showNoProviderModal.value = true
+    isSending.value = false
+    return
+  }
+  showNoProviderModal.value = false
   const selectedFile = options.regenerate ? null : attachment.value
   if (!conversationId.value) {
     try {
@@ -260,7 +272,18 @@ async function sendMessage(text = draft.value, options = {}) {
         failed: true,
       }
     }
-    pageError.value = error?.message || copy.requestFailed
+    const message = error?.message || copy.requestFailed
+    if (message.includes('当前没有配置模型渠道')) {
+      messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
+      if (!options.regenerate) {
+        draft.value = content
+        attachment.value = selectedFile
+      }
+      showNoProviderModal.value = true
+      pageError.value = ''
+    } else {
+      pageError.value = message
+    }
     scrollToBottom()
   } finally {
     isSending.value = false
@@ -360,10 +383,6 @@ onBeforeUnmount(() => {
         <BrandMark class="welcome-mark" />
         <h1>{{ copy.emptyTitle }}</h1>
         <p>{{ copy.emptyDescription }}</p>
-        <p v-if="!models.length" class="model-empty-hint">
-          {{ isAdmin ? '尚未配置模型，请先添加 API 供应商并启用模型。' : '平台尚未配置可用模型，请联系管理员。' }}
-        </p>
-        <button v-if="isAdmin && !models.length" class="admin-primary" type="button" @click="router.push('/admin')">前往平台管理</button>
       </div>
       <div v-if="isLoading" class="loading-state">{{ copy.loading }}</div>
 
@@ -394,7 +413,7 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div class="footer-toolbar">
+      <div v-if="models.length" class="footer-toolbar">
         <label class="model-select-label">
           <span>模型</span>
           <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
@@ -427,6 +446,18 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </footer>
+
+    <div v-if="showNoProviderModal" class="provider-required-backdrop" @click.self="showNoProviderModal = false">
+      <section class="provider-required-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-required-title">
+        <div class="provider-required-icon">!</div>
+        <h2 id="provider-required-title">当前没有配置模型渠道</h2>
+        <p>请联系管理员配置并启用 AI 模型供应商后，再开始对话。</p>
+        <div class="provider-required-actions">
+          <button class="provider-required-dismiss" type="button" @click="showNoProviderModal = false">我知道了</button>
+          <button v-if="isAdmin" class="provider-required-admin" type="button" @click="showNoProviderModal = false; router.push('/admin')">前往配置</button>
+        </div>
+      </section>
+    </div>
 
     <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
       <aside class="history-drawer" :aria-label="copy.history">

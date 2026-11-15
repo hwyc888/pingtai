@@ -518,3 +518,15 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 760px) {
   .pm-model-row input.pm-metadata-input { width: 68px; flex-basis: 68px; }
 }
+
+
+/* Show the missing-provider prompt only after the user tries to send. */
+.provider-required-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(31,39,67,.38); backdrop-filter: blur(5px); }
+.provider-required-dialog { width: min(420px,100%); padding: 28px 26px 22px; border: 1px solid rgba(255,255,255,.9); border-radius: 20px; text-align: center; background: #fff; box-shadow: 0 24px 80px rgba(29,39,83,.22); animation: provider-dialog-in .18s ease-out; }
+.provider-required-icon { display: grid; width: 48px; height: 48px; place-items: center; margin: 0 auto 15px; border-radius: 15px; color: #5369d7; font-size: 22px; font-weight: 800; background: #eef1ff; }
+.provider-required-dialog h2 { margin: 0; color: #303852; font-size: 18px; }
+.provider-required-dialog p { margin: 10px 0 22px; color: #858fa7; font-size: 12px; line-height: 1.8; }
+.provider-required-actions { display: flex; justify-content: center; gap: 9px; }
+.provider-required-actions button { min-height: 38px; padding: 0 16px; border: 1px solid #e3e7f1; border-radius: 10px; color: #66718b; font-size: 11px; font-weight: 700; background: #fff; cursor: pointer; }
+.provider-required-actions .provider-required-admin { border-color: #4f68dc; color: #fff; background: #4f68dc; }
+@keyframes provider-dialog-in { from { opacity: 0; transform: translateY(7px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }

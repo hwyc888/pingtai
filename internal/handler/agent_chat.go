@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 
 	"pingtai/internal/contextbudget"
 	"pingtai/internal/model"
+	"pingtai/internal/service/openai"
 	"pingtai/internal/util"
 )
 
@@ -130,7 +132,16 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 500, "msg": "缺少会话ID、智能体ID或消息内容"})
 		return
 	}
-	selectedModel, allowed := selectChatModel(h.Config, botID)
+	activeConfig, _, providerErr := h.activeChatProvider(r.Context())
+	if errors.Is(providerErr, sql.ErrNoRows) || errors.Is(providerErr, errNoActiveChatProvider) {
+		writeJSON(w, http.StatusOK, map[string]any{"code": 503, "msg": "当前没有配置模型渠道，请联系管理员配置"})
+		return
+	}
+	if providerErr != nil {
+		writeError(w, http.StatusInternalServerError, "读取当前模型供应商失败")
+		return
+	}
+	selectedModel, allowed := selectChatModel(&activeConfig, botID)
 	if !allowed {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 400, "msg": "所选模型已停用或不存在，请刷新模型列表后重试"})
 		return
@@ -148,15 +159,15 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 400, "msg": err.Error()})
 		return
 	}
-	history, err := h.Chats.ContextMessages(r.Context(), conversationID, h.Config.ContextTurns)
+	history, err := h.Chats.ContextMessages(r.Context(), conversationID, activeConfig.ContextTurns)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取会话历史失败")
 		return
 	}
 
 	budget, err := contextbudget.Fit(
-		h.Config.SystemPrompt(), history, userContent,
-		h.Config.ModelContextTokens, h.Config.OpenAIMaxTokens,
+		activeConfig.SystemPrompt(), history, userContent,
+		activeConfig.ModelContextTokens, activeConfig.OpenAIMaxTokens,
 	)
 	if err != nil {
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{
@@ -200,8 +211,8 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		"messages": messages,
 		"stream":   false,
 	}
-	if h.Config.ChatProvider == "openai" && h.Config.OpenAIMaxTokens > 0 {
-		outputLimit := int64(h.Config.OpenAIMaxTokens)
+	if activeConfig.ChatProvider == "openai" && activeConfig.OpenAIMaxTokens > 0 {
+		outputLimit := int64(activeConfig.OpenAIMaxTokens)
 		if budget.AllowedOutputTokens > 0 && budget.AllowedOutputTokens < outputLimit {
 			outputLimit = budget.AllowedOutputTokens
 		}
@@ -212,7 +223,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		}
 		payload["max_tokens"] = int(outputLimit)
 	}
-	body, status, callErr := h.Model.Complete(r.Context(), payload)
+	body, status, callErr := openai.NewClient(activeConfig).Complete(r.Context(), payload)
 	if callErr != nil || status < 200 || status >= 300 {
 		message := "模型调用失败"
 		if callErr != nil {

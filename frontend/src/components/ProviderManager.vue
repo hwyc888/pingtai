@@ -264,7 +264,7 @@ async function saveModels() {
   successMessage.value = ''
   try {
     await saveModelConfiguration()
-    successMessage.value = '模型选择和默认模型已保存。'
+    successMessage.value = '模型选择和默认模型已保存。若尚未启用此供应商，请点击“保存并启用此供应商”。'
   } catch (error) {
     errorMessage.value = error?.message || '保存模型设置失败'
   } finally {
@@ -369,7 +369,7 @@ async function activateProvider() {
     }))
     await loadProviders()
     providerView.value = 'list'
-    successMessage.value = '已设为默认供应商。请重启 pingtai 服务后生效。'
+    successMessage.value = '已启用为平台默认供应商，对话页面立即生效，无需重启服务。'
   } catch (error) {
     errorMessage.value = error?.message || '启用供应商失败'
   } finally {
@@ -392,7 +392,7 @@ async function activateFromList(provider) {
       default_model: provider.default_model,
     }))
     await loadProviders()
-    successMessage.value = '已设为默认供应商。请重启 pingtai 服务后生效。'
+    successMessage.value = '已启用为平台默认供应商，对话页面立即生效，无需重启服务。'
   } catch (error) {
     errorMessage.value = error?.message || '启用供应商失败'
   } finally {
@@ -597,7 +597,7 @@ onMounted(load)
         </header>
         <div class="pm-model-toolbar">
           <div class="pm-search-box"><span>⌕</span><input v-model="modelSearch" placeholder="搜索模型 ID" /></div>
-          <label class="pm-default-select"><span>默认模型</span>
+          <label class="pm-default-select"><span>默认模型（此供应商）</span>
             <select v-model="providerForm.default_model">
               <option v-for="item in providerModels.filter((model) => model.enabled)" :key="item.model_id" :value="item.model_id">{{ item.model_id }}</option>
             </select>
@@ -613,7 +613,7 @@ onMounted(load)
             <input v-model.number="model.max_output_tokens" class="pm-metadata-input" type="number" min="1" placeholder="输出上限" title="最大输出 Token（可选）" />
             <button type="button" class="pm-default-star" :class="{ selected: providerForm.default_model === model.model_id }"
               :disabled="!model.enabled" @click="setDefaultModel(model)" :title="model.enabled ? '设为默认模型' : '请先启用模型'">
-              {{ providerForm.default_model === model.model_id ? '默认' : '设为默认' }}
+              {{ providerForm.default_model === model.model_id ? '默认' : '设为此供应商默认' }}
             </button>
           </div>
           <p v-if="!filteredModels.length" class="pm-empty-models">没有匹配的模型。</p>
@@ -623,7 +623,7 @@ onMounted(load)
           <div>
             <button class="admin-secondary" type="button" :disabled="saving" @click="saveModels">保存模型设置</button>
             <button class="admin-secondary" type="button" :disabled="saving || !providerForm.default_model" @click="testModel">测试默认模型</button>
-            <button class="admin-primary" type="button" :disabled="saving || !enabledModelCount" @click="activateProvider">保存并设为默认</button>
+            <button class="admin-primary" type="button" :disabled="saving || !enabledModelCount" @click="activateProvider">保存并启用此供应商</button>
           </div>
         </footer>
       </section>

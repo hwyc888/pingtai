@@ -127,33 +127,45 @@ func (h *Handler) ActivateProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "供应商不存在")
 		return
 	}
-	if selectedDefault := strings.TrimSpace(stringValue(payload["default_model"])); selectedDefault != "" && selectedDefault != item.DefaultModel {
-		item.DefaultModel = selectedDefault
-		if _, err := repo.Save(r.Context(), item); err != nil {
-			writeError(w, http.StatusBadRequest, "保存默认模型失败")
-			return
-		}
-	}
 	models, err := repo.Models(r.Context(), id, true)
 	if err != nil || len(models) == 0 {
 		writeError(w, http.StatusBadRequest, "请先获取模型并至少启用一个模型")
 		return
 	}
+	selectedDefault := strings.TrimSpace(stringValue(payload["default_model"]))
+	if selectedDefault == "" {
+		selectedDefault = item.DefaultModel
+	}
+	if selectedDefault == "" {
+		selectedDefault = models[0].ModelID
+	}
 	defaultFound := false
 	for _, entry := range models {
-		if entry.ModelID == item.DefaultModel {
+		if entry.ModelID == selectedDefault {
 			defaultFound = true
+			break
 		}
 	}
 	if !defaultFound {
 		writeError(w, http.StatusBadRequest, "默认模型必须是已启用的模型")
 		return
 	}
+	if item.DefaultModel != selectedDefault {
+		item.DefaultModel = selectedDefault
+		if _, err := repo.Save(r.Context(), item); err != nil {
+			writeError(w, http.StatusBadRequest, "保存默认模型失败")
+			return
+		}
+	}
 	if err := repo.Activate(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "启用供应商失败")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "restart_required"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"code": 0,
+		"msg": "activated",
+		"data": map[string]any{"default_model": selectedDefault},
+	})
 }
 
 func (h *Handler) DiscoverProviderModels(w http.ResponseWriter, r *http.Request) {
