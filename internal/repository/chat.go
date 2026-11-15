@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"pingtai/internal/model"
@@ -206,4 +207,73 @@ func (r *ChatRepository) FindMessage(ctx context.Context, id int64, conversation
 	err := r.db.QueryRowContext(ctx, query, id, conversationID, userID).
 		Scan(&item.ID, &item.ConversationID, &item.ChatID, &item.Role, &item.Content, &item.ReasoningContent, &item.CreatedAt)
 	return item, err
+}
+
+
+type ConversationSummary struct {
+	ID        string    `json:"id"`
+	BotID     string    `json:"bot_id"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (r *ChatRepository) ListConversations(ctx context.Context, userID string, limit int) ([]ConversationSummary, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	query := `SELECT v.id,v.bot_id,v.created_at,v.updated_at,
+		COALESCE((SELECT CASE WHEN m.role='user' THEN m.content ELSE '' END
+			FROM ai_message m WHERE m.conversation_id=v.id AND m.role='user'
+			ORDER BY m.id ASC LIMIT 1),'')
+		FROM ai_conversation v
+		WHERE v.user_id=? AND EXISTS (SELECT 1 FROM ai_message m WHERE m.conversation_id=v.id)
+		ORDER BY v.updated_at DESC,v.created_at DESC LIMIT ?`
+	rows, err := r.db.QueryContext(ctx, query, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ConversationSummary, 0)
+	for rows.Next() {
+		var item ConversationSummary
+		if err := rows.Scan(&item.ID, &item.BotID, &item.CreatedAt, &item.UpdatedAt, &item.Title); err != nil {
+			return nil, err
+		}
+		item.Title = strings.TrimSpace(item.Title)
+		if item.Title == "" {
+			item.Title = "新对话"
+		}
+		runes := []rune(item.Title)
+		if len(runes) > 60 {
+			item.Title = string(runes[:60]) + "…"
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *ChatRepository) DeleteConversation(ctx context.Context, id, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var exists int
+	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM ai_conversation WHERE id=? AND user_id=?", id, userID).Scan(&exists); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_message_context WHERE message_id IN (SELECT id FROM ai_message WHERE conversation_id=?)", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_message WHERE conversation_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_chat WHERE conversation_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_conversation WHERE id=? AND user_id=?", id, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
