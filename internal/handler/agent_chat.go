@@ -167,7 +167,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 
 	systemPrompt := activeConfig.SystemPrompt()
 	if knowledgeBaseID := strings.TrimSpace(r.FormValue("knowledge_base_id")); knowledgeBaseID != "" {
-		knowledgeContext, knowledgeErr := h.knowledgePrompt(r.Context(), knowledgeBaseID, content)
+		knowledgeContext, knowledgeErr := h.knowledgePrompt(r.Context(), identity.Username, knowledgeBaseID, content)
 		if knowledgeErr != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"code": http.StatusBadRequest, "msg": knowledgeErr.Error()})
 			return

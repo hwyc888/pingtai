@@ -77,6 +77,19 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("GET /admin/knowledge/versions", admin(http.HandlerFunc(h.ListLocalKnowledgeVersions)))
 	api.Handle("POST /admin/knowledge/versions/publish", admin(http.HandlerFunc(h.PublishLocalKnowledgeVersion)))
 
+	knowledgeAccess := func(next http.Handler) http.Handler {
+		return middleware.RequireAccess(h.Auth.Tokens(), next)
+	}
+	api.Handle("GET /knowledge/manage/bases", knowledgeAccess(http.HandlerFunc(h.ListKnowledgeBases)))
+	api.Handle("POST /knowledge/manage/bases/create", knowledgeAccess(http.HandlerFunc(h.CreateKnowledgeBase)))
+	api.Handle("POST /knowledge/manage/bases/update", knowledgeAccess(http.HandlerFunc(h.UpdateKnowledgeBase)))
+	api.Handle("POST /knowledge/manage/bases/delete", knowledgeAccess(http.HandlerFunc(h.DeleteKnowledgeBase)))
+	api.Handle("GET /knowledge/manage/documents", knowledgeAccess(http.HandlerFunc(h.ListLocalKnowledgeDocuments)))
+	api.Handle("POST /knowledge/manage/documents/upload", knowledgeAccess(http.HandlerFunc(h.UploadLocalKnowledgeDocuments)))
+	api.Handle("POST /knowledge/manage/documents/delete", knowledgeAccess(http.HandlerFunc(h.DeleteLocalKnowledgeDocument)))
+	api.Handle("GET /knowledge/manage/versions", knowledgeAccess(http.HandlerFunc(h.ListLocalKnowledgeVersions)))
+	api.Handle("POST /knowledge/manage/versions/publish", knowledgeAccess(http.HandlerFunc(h.PublishLocalKnowledgeVersion)))
+
 	api.Handle("GET /knowledge/bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListAvailableKnowledgeBases)))
 
 	api.Handle("GET /agents/models", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListChatModels)))

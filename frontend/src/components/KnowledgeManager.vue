@@ -40,7 +40,7 @@ function clearMessages() {
 async function loadBases() {
   loading.value = true
   try {
-    const data = assertSuccess(await api.get('/admin/knowledge/bases'))
+    const data = assertSuccess(await api.get('/knowledge/manage/bases'))
     bases.value = Array.isArray(data) ? data : []
     if (!bases.value.some((item) => item.id === selectedBaseId.value)) {
       selectedBaseId.value = bases.value[0]?.id || ''
@@ -64,8 +64,8 @@ async function loadSelectedBase() {
   editDescription.value = base.description || ''
   editEnabled.value = Boolean(base.enabled)
   const [documentData, versionData] = await Promise.all([
-    api.get('/admin/knowledge/documents', { base_id: base.id }),
-    api.get('/admin/knowledge/versions', { base_id: base.id }),
+    api.get('/knowledge/manage/documents', { base_id: base.id }),
+    api.get('/knowledge/manage/versions', { base_id: base.id }),
   ])
   const documentItems = assertSuccess(documentData)
   const versionItems = assertSuccess(versionData)
@@ -91,7 +91,7 @@ async function createBase() {
   saving.value = true
   clearMessages()
   try {
-    const data = assertSuccess(await api.post('/admin/knowledge/bases/create', {
+    const data = assertSuccess(await api.post('/knowledge/manage/bases/create', {
       name: newName.value.trim(),
       description: newDescription.value.trim(),
     }))
@@ -112,7 +112,7 @@ async function saveBaseSettings() {
   saving.value = true
   clearMessages()
   try {
-    assertSuccess(await api.post('/admin/knowledge/bases/update', {
+    assertSuccess(await api.post('/knowledge/manage/bases/update', {
       id: selectedBase.value.id,
       name: editName.value.trim(),
       description: editDescription.value.trim(),
@@ -133,7 +133,7 @@ async function deleteBase() {
   saving.value = true
   clearMessages()
   try {
-    assertSuccess(await api.post('/admin/knowledge/bases/delete', { id: selectedBase.value.id }))
+    assertSuccess(await api.post('/knowledge/manage/bases/delete', { id: selectedBase.value.id }))
     selectedBaseId.value = ''
     successMessage.value = '知识库已删除。'
     await loadBases()
@@ -159,7 +159,7 @@ async function uploadFiles() {
     const body = new FormData()
     body.append('base_id', selectedBase.value.id)
     selectedFiles.value.forEach((file) => body.append('files', file))
-    const data = assertSuccess(await api.post('/admin/knowledge/documents/upload', body))
+    const data = assertSuccess(await api.post('/knowledge/manage/documents/upload', body))
     const count = Array.isArray(data) ? data.length : selectedFiles.value.length
     successMessage.value = '已完成文档解析和索引，共处理 ' + count + ' 个文件。'
     selectedFiles.value = []
@@ -177,7 +177,7 @@ async function deleteDocument(document) {
   saving.value = true
   clearMessages()
   try {
-    assertSuccess(await api.post('/admin/knowledge/documents/delete', { id: document.id }))
+    assertSuccess(await api.post('/knowledge/manage/documents/delete', { id: document.id }))
     successMessage.value = '文档已删除。'
     await loadBases()
   } catch (error) {
@@ -195,7 +195,7 @@ async function publishVersion() {
   publishing.value = true
   clearMessages()
   try {
-    assertSuccess(await api.post('/admin/knowledge/versions/publish', {
+    assertSuccess(await api.post('/knowledge/manage/versions/publish', {
       base_id: selectedBase.value.id,
       title: versionTitle.value.trim(),
       description: versionDescription.value.trim(),
@@ -261,7 +261,7 @@ onMounted(loadBases)
           class="knowledge-list-item" :class="{ active: base.id === selectedBaseId }"
           @click="selectBase(base.id)">
           <strong>{{ base.name }}</strong>
-          <small>{{ base.document_count }} 份文档 · {{ base.enabled ? '已启用' : '已停用' }}</small>
+          <small>{{ base.document_count }} 份文档 · {{ base.enabled ? '已启用' : '已停用' }} · 归属 {{ base.owner_username || '未知' }}</small>
         </button>
         <p v-if="!bases.length" class="admin-empty">还没有知识库，请先创建。</p>
       </aside>

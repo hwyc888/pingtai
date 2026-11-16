@@ -27,6 +27,47 @@ import (
 
 var knowledgeHTMLTag = regexp.MustCompile("(?s)<[^>]*>")
 
+func (h *Handler) isKnowledgeAdmin(ctx context.Context, username string) bool {
+	if h.Config.SSOConfigured() {
+		return h.Config.IsSSOAdmin(username)
+	}
+	if h.Users == nil {
+		return false
+	}
+	user, err := h.Users.FindByUsername(ctx, username)
+	return err == nil && user.UserType == 1 && user.Status == 1 && user.DelTag == 0
+}
+
+func (h *Handler) canAccessKnowledgeBase(ctx context.Context, username, baseID string) (bool, error) {
+	var owner string
+	err := h.DB.QueryRowContext(ctx, "SELECT created_by FROM ai_knowledge_base WHERE id=?", baseID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return owner == username || h.isKnowledgeAdmin(ctx, username), nil
+}
+
+func (h *Handler) requireKnowledgeBaseAccess(w http.ResponseWriter, r *http.Request, baseID string) bool {
+	identity, ok := currentIdentity(r)
+	if !ok || strings.TrimSpace(identity.Username) == "" {
+		writeError(w, http.StatusUnauthorized, "请先登录")
+		return false
+	}
+	allowed, err := h.canAccessKnowledgeBase(r.Context(), identity.Username, baseID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "验证知识库权限失败")
+		return false
+	}
+	if !allowed {
+		writeError(w, http.StatusNotFound, "知识库不存在或无权访问")
+		return false
+	}
+	return true
+}
+
 func (h *Handler) ListKnowledgeBases(w http.ResponseWriter, r *http.Request) {
 	h.writeKnowledgeBases(w, r, true)
 }
@@ -36,13 +77,27 @@ func (h *Handler) ListAvailableKnowledgeBases(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) writeKnowledgeBases(w http.ResponseWriter, r *http.Request, includeDisabled bool) {
-	query := "SELECT b.id, b.name, b.description, b.enabled, COUNT(d.id), b.created_at, b.updated_at " +
+	identity, ok := currentIdentity(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
+	query := "SELECT b.id, b.name, b.description, b.enabled, COUNT(d.id), b.created_by, b.created_at, b.updated_at " +
 		"FROM ai_knowledge_base b LEFT JOIN ai_knowledge_document d ON d.base_id=b.id "
+	conditions := make([]string, 0, 2)
+	args := make([]any, 0, 2)
+	if !h.isKnowledgeAdmin(r.Context(), identity.Username) {
+		conditions = append(conditions, "b.created_by=?")
+		args = append(args, identity.Username)
+	}
 	if !includeDisabled {
-		query += "WHERE b.enabled=1 "
+		conditions = append(conditions, "b.enabled=1")
+	}
+	if len(conditions) > 0 {
+		query += "WHERE " + strings.Join(conditions, " AND ") + " "
 	}
 	query += "GROUP BY b.id ORDER BY b.updated_at DESC"
-	rows, err := h.DB.QueryContext(r.Context(), query)
+	rows, err := h.DB.QueryContext(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取知识库列表失败")
 		return
@@ -50,9 +105,9 @@ func (h *Handler) writeKnowledgeBases(w http.ResponseWriter, r *http.Request, in
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var id, name, description, createdAt, updatedAt string
+		var id, name, description, owner, createdAt, updatedAt string
 		var enabled, documentCount int
-		if err := rows.Scan(&id, &name, &description, &enabled, &documentCount, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &name, &description, &enabled, &documentCount, &owner, &createdAt, &updatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "读取知识库列表失败")
 			return
 		}
@@ -62,7 +117,7 @@ func (h *Handler) writeKnowledgeBases(w http.ResponseWriter, r *http.Request, in
 		items = append(items, map[string]any{
 			"id": id, "name": name, "description": description,
 			"enabled": enabled == 1, "document_count": documentCount,
-			"created_at": createdAt, "updated_at": updatedAt,
+			"owner_username": owner, "created_at": createdAt, "updated_at": updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -89,7 +144,11 @@ func (h *Handler) CreateKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "生成知识库 ID 失败")
 		return
 	}
-	identity, _ := currentIdentity(r)
+	identity, ok := currentIdentity(r)
+	if !ok || strings.TrimSpace(identity.Username) == "" {
+		writeError(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = h.DB.ExecContext(r.Context(), "INSERT INTO ai_knowledge_base (id,name,description,enabled,created_by,created_at,updated_at) VALUES (?,?,?,1,?,?,?)",
 		id, name, description, identity.Username, now, now)
@@ -114,6 +173,9 @@ func (h *Handler) UpdateKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	description := strings.TrimSpace(stringValue(payload["description"]))
 	if id == "" || name == "" || utf8.RuneCountInString(name) > 100 || utf8.RuneCountInString(description) > 500 {
 		writeError(w, http.StatusBadRequest, "知识库 ID 或名称无效")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, id) {
 		return
 	}
 	enabled := 1
@@ -143,6 +205,9 @@ func (h *Handler) DeleteKnowledgeBase(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(stringValue(payload["id"]))
 	if id == "" {
 		writeError(w, http.StatusBadRequest, "缺少知识库 ID")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, id) {
 		return
 	}
 	tx, err := h.DB.BeginTx(r.Context(), nil)
@@ -176,6 +241,9 @@ func (h *Handler) ListLocalKnowledgeDocuments(w http.ResponseWriter, r *http.Req
 	baseID := strings.TrimSpace(r.URL.Query().Get("base_id"))
 	if baseID == "" {
 		writeError(w, http.StatusBadRequest, "缺少知识库 ID")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
 	rows, err := h.DB.QueryContext(r.Context(), "SELECT id,filename,content_type,size_bytes,chunk_count,created_by,created_at,updated_at FROM ai_knowledge_document WHERE base_id=? ORDER BY created_at DESC", baseID)
@@ -215,9 +283,7 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "缺少知识库 ID")
 		return
 	}
-	var exists int
-	if err := h.DB.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ai_knowledge_base WHERE id=?", baseID).Scan(&exists); err != nil || exists == 0 {
-		writeError(w, http.StatusNotFound, "知识库不存在")
+	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
 	if r.MultipartForm == nil {
@@ -336,6 +402,17 @@ func (h *Handler) DeleteLocalKnowledgeDocument(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "缺少文档 ID")
 		return
 	}
+	var baseID string
+	if err := h.DB.QueryRowContext(r.Context(), "SELECT base_id FROM ai_knowledge_document WHERE id=?", id).Scan(&baseID); errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "文档不存在")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "读取文档归属失败")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
+		return
+	}
 	result, err := h.DB.ExecContext(r.Context(), "DELETE FROM ai_knowledge_document WHERE id=?", id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "删除文档失败")
@@ -353,6 +430,9 @@ func (h *Handler) ListLocalKnowledgeVersions(w http.ResponseWriter, r *http.Requ
 	baseID := strings.TrimSpace(r.URL.Query().Get("base_id"))
 	if baseID == "" {
 		writeError(w, http.StatusBadRequest, "缺少知识库 ID")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
 	rows, err := h.DB.QueryContext(r.Context(), "SELECT id,version_number,title,description,status,snapshot_json,document_count,created_by,created_at,published_at FROM ai_knowledge_version WHERE dataset_id=? ORDER BY version_number DESC", baseID)
@@ -398,6 +478,9 @@ func (h *Handler) PublishLocalKnowledgeVersion(w http.ResponseWriter, r *http.Re
 	description := strings.TrimSpace(stringValue(payload["description"]))
 	if baseID == "" || len([]rune(title)) > 80 || len([]rune(description)) > 500 {
 		writeError(w, http.StatusBadRequest, "知识库 ID 或版本说明无效")
+		return
+	}
+	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
 	var baseName string
@@ -485,14 +568,17 @@ func (h *Handler) PublishLocalKnowledgeVersion(w http.ResponseWriter, r *http.Re
 	})
 }
 
-func (h *Handler) knowledgePrompt(ctx context.Context, baseID, query string) (string, error) {
-	var name string
+func (h *Handler) knowledgePrompt(ctx context.Context, username, baseID, query string) (string, error) {
+	var name, owner string
 	var enabled int
-	if err := h.DB.QueryRowContext(ctx, "SELECT name,enabled FROM ai_knowledge_base WHERE id=?", baseID).Scan(&name, &enabled); err != nil {
+	if err := h.DB.QueryRowContext(ctx, "SELECT name,enabled,created_by FROM ai_knowledge_base WHERE id=?", baseID).Scan(&name, &enabled, &owner); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return "", errors.New("所选知识库不存在")
+			return "", errors.New("所选知识库不存在或无权访问")
 		}
 		return "", err
+	}
+	if owner != username && !h.isKnowledgeAdmin(ctx, username) {
+		return "", errors.New("所选知识库不存在或无权访问")
 	}
 	if enabled != 1 {
 		return "", errors.New("所选知识库已停用")
