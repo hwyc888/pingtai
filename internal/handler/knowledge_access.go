@@ -32,7 +32,8 @@ func (h *Handler) knowledgeAccess(ctx context.Context, username, baseID string) 
 	if err != nil {
 		return false, false, err
 	}
-	return knowledgeAccessDecision(owner, mode, username, member == 1, h.isKnowledgeAdmin(ctx, username)), nil
+	canUse, canManage := knowledgeAccessDecision(owner, mode, username, member == 1, h.isKnowledgeAdmin(ctx, username))
+	return canUse, canManage, nil
 }
 
 func parseKnowledgeMembers(value any) []string {
