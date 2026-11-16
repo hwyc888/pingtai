@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { api } from '../api'
 
+const props = defineProps({ adminMode: { type: Boolean, default: false } })
+const canConfigurePermissions = ref(props.adminMode)
+const listPath = computed(() => canConfigurePermissions.value ? '/knowledge/manage/bases' : '/knowledge/my-bases')
 const bases = ref([])
 const selectedBaseId = ref('')
 const documents = ref([])
@@ -14,6 +17,12 @@ const errorMessage = ref('')
 const successMessage = ref('')
 const newName = ref('')
 const newDescription = ref('')
+const newAccessMode = ref('shared')
+const newOwnerUsername = ref('')
+const newMemberUsernames = ref('')
+const editAccessMode = ref('private')
+const editOwnerUsername = ref('')
+const editMemberUsernames = ref('')
 const editName = ref('')
 const editDescription = ref('')
 const editEnabled = ref(true)
@@ -40,7 +49,7 @@ function clearMessages() {
 async function loadBases() {
   loading.value = true
   try {
-    const data = assertSuccess(await api.get('/knowledge/manage/bases'))
+    const data = assertSuccess(await api.get(listPath.value))
     bases.value = Array.isArray(data) ? data : []
     if (!bases.value.some((item) => item.id === selectedBaseId.value)) {
       selectedBaseId.value = bases.value[0]?.id || ''
@@ -63,6 +72,9 @@ async function loadSelectedBase() {
   editName.value = base.name || ''
   editDescription.value = base.description || ''
   editEnabled.value = Boolean(base.enabled)
+  editAccessMode.value = base.access_mode || 'private'
+  editOwnerUsername.value = base.owner_username || ''
+  editMemberUsernames.value = Array.isArray(base.member_usernames) ? base.member_usernames.join(', ') : ''
   const [documentData, versionData] = await Promise.all([
     api.get('/knowledge/manage/documents', { base_id: base.id }),
     api.get('/knowledge/manage/versions', { base_id: base.id }),
@@ -91,12 +103,18 @@ async function createBase() {
   saving.value = true
   clearMessages()
   try {
-    const data = assertSuccess(await api.post('/knowledge/manage/bases/create', {
-      name: newName.value.trim(),
-      description: newDescription.value.trim(),
-    }))
+    const payload = { name: newName.value.trim(), description: newDescription.value.trim() }
+    if (canConfigurePermissions.value) {
+      payload.access_mode = newAccessMode.value
+      payload.owner_username = newOwnerUsername.value.trim()
+      payload.member_usernames = newMemberUsernames.value.trim()
+    }
+    const data = assertSuccess(await api.post('/knowledge/manage/bases/create', payload))
     newName.value = ''
     newDescription.value = ''
+    newAccessMode.value = 'shared'
+    newOwnerUsername.value = ''
+    newMemberUsernames.value = ''
     await loadBases()
     if (data.id) await selectBase(data.id)
     successMessage.value = '知识库已创建。'
@@ -112,12 +130,18 @@ async function saveBaseSettings() {
   saving.value = true
   clearMessages()
   try {
-    assertSuccess(await api.post('/knowledge/manage/bases/update', {
+    const payload = {
       id: selectedBase.value.id,
       name: editName.value.trim(),
       description: editDescription.value.trim(),
       enabled: editEnabled.value,
-    }))
+    }
+    if (canConfigurePermissions.value) {
+      payload.access_mode = editAccessMode.value
+      payload.owner_username = editOwnerUsername.value.trim()
+      payload.member_usernames = editMemberUsernames.value.trim()
+    }
+    assertSuccess(await api.post('/knowledge/manage/bases/update', payload))
     successMessage.value = '知识库设置已保存。'
     await loadBases()
   } catch (error) {
@@ -211,6 +235,10 @@ async function publishVersion() {
   }
 }
 
+function accessModeLabel(value) {
+  return ({ shared: '公共知识库', assigned: '指定用户', private: '个人私有' })[value] || '个人私有'
+}
+
 function formatBytes(value) {
   const size = Number(value || 0)
   if (size < 1024) return size + ' B'
@@ -224,7 +252,17 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
 }
 
-onMounted(loadBases)
+onMounted(async () => {
+  if (!canConfigurePermissions.value) {
+    try {
+      const profile = assertSuccess(await api.get('/auth/me'))
+      canConfigurePermissions.value = Boolean(profile.is_admin)
+    } catch {
+      canConfigurePermissions.value = false
+    }
+  }
+  await loadBases()
+})
 </script>
 
 <template>
@@ -232,8 +270,8 @@ onMounted(loadBases)
     <section class="admin-card">
       <div class="admin-card-heading">
         <div>
-          <h2>创建知识库</h2>
-          <p>创建后上传文档，平台会在本地 SQLite 中保存文本并建立检索索引。</p>
+          <h2>{{ canConfigurePermissions ? '创建知识库' : '创建个人知识库' }}</h2>
+          <p>{{ canConfigurePermissions ? '设置知识库归属与使用范围，授权用户只可检索，不能修改文档。' : '新建知识库默认仅自己和平台管理员可访问。' }}</p>
         </div>
       </div>
       <form class="knowledge-create-form" @submit.prevent="createBase">
@@ -241,7 +279,20 @@ onMounted(loadBases)
           <input v-model="newName" maxlength="100" placeholder="例如：学校规章制度" required />
         </label>
         <label>知识库说明
-          <input v-model="newDescription" maxlength="500" placeholder="简要说明该知识库包含的内容" />
+          <input v-model="newDescription" maxlength="500" placeholder="简要说明知识库内容" />
+        </label>
+        <label v-if="canConfigurePermissions">访问权限
+          <select v-model="newAccessMode">
+            <option value="shared">公共：所有用户可用</option>
+            <option value="assigned">指定用户可用</option>
+            <option value="private">私有：仅归属人可用</option>
+          </select>
+        </label>
+        <label v-if="canConfigurePermissions">归属账号
+          <input v-model="newOwnerUsername" maxlength="100" placeholder="留空则归当前管理员" />
+        </label>
+        <label v-if="canConfigurePermissions && newAccessMode === 'assigned'">授权账号
+          <textarea v-model="newMemberUsernames" rows="1" placeholder="多个账号用逗号分隔" required></textarea>
         </label>
         <button class="admin-primary" type="submit" :disabled="saving">创建知识库</button>
       </form>
@@ -261,7 +312,7 @@ onMounted(loadBases)
           class="knowledge-list-item" :class="{ active: base.id === selectedBaseId }"
           @click="selectBase(base.id)">
           <strong>{{ base.name }}</strong>
-          <small>{{ base.document_count }} 份文档 · {{ base.enabled ? '已启用' : '已停用' }} · 归属 {{ base.owner_username || '未知' }}</small>
+          <small>{{ base.document_count }} 份文档 · {{ accessModeLabel(base.access_mode) }} · {{ base.enabled ? '已启用' : '已停用' }}</small>
         </button>
         <p v-if="!bases.length" class="admin-empty">还没有知识库，请先创建。</p>
       </aside>
@@ -272,6 +323,7 @@ onMounted(loadBases)
             <div>
               <h2>{{ selectedBase.name }}</h2>
               <p>{{ selectedBase.description || '尚未填写知识库说明' }}</p>
+              <p class="knowledge-owner-line">归属：{{ selectedBase.owner_username || '未知' }} · {{ accessModeLabel(selectedBase.access_mode) }}<template v-if="canConfigurePermissions && selectedBase.access_mode === 'assigned'"> · 授权：{{ (selectedBase.member_usernames || []).join('、') || '暂无' }}</template></p>
             </div>
             <span class="admin-mode">{{ selectedBase.enabled ? '对话可用' : '已停用' }}</span>
           </div>
@@ -279,7 +331,20 @@ onMounted(loadBases)
           <div class="knowledge-base-settings">
             <label>知识库名称<input v-model="editName" maxlength="100" /></label>
             <label>知识库说明<input v-model="editDescription" maxlength="500" /></label>
-            <label class="knowledge-enabled-option"><input v-model="editEnabled" type="checkbox" /> 允许用户在对话中使用</label>
+            <label class="knowledge-enabled-option"><input v-model="editEnabled" type="checkbox" /> 允许在对话中使用</label>
+            <label v-if="canConfigurePermissions">访问权限
+              <select v-model="editAccessMode">
+                <option value="shared">公共：所有用户可用</option>
+                <option value="assigned">指定用户可用</option>
+                <option value="private">私有：仅归属人可用</option>
+              </select>
+            </label>
+            <label v-if="canConfigurePermissions">归属账号
+              <input v-model="editOwnerUsername" maxlength="100" placeholder="填写登录账号" required />
+            </label>
+            <label v-if="canConfigurePermissions && editAccessMode === 'assigned'">授权账号
+              <textarea v-model="editMemberUsernames" rows="2" placeholder="多个账号用逗号分隔" required></textarea>
+            </label>
             <div class="admin-row-actions">
               <button class="admin-primary" type="button" :disabled="saving" @click="saveBaseSettings">保存设置</button>
               <button class="admin-text-button danger" type="button" :disabled="saving" @click="deleteBase">删除知识库</button>
@@ -340,8 +405,8 @@ onMounted(loadBases)
         </template>
         <div v-else class="knowledge-unavailable">
           <div class="knowledge-empty-icon">文</div>
-          <h2>选择或创建一个知识库</h2>
-          <p>上传的文档会在本平台本地解析、分段并建立关键词检索索引。启用的知识库会出现在对话页面的知识库开关中。</p>
+          <h2>{{ canConfigurePermissions ? '选择一个知识库' : '创建你的第一个知识库' }}</h2>
+          <p>{{ canConfigurePermissions ? '选择左侧知识库查看文档，并在上方设置使用权限。' : '上传个人资料后，只有你本人和平台管理员可以查看与检索。' }}</p>
         </div>
       </section>
     </div>

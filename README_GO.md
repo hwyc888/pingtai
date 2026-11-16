@@ -86,6 +86,14 @@ Open **平台管理 → 知识库管理** to create knowledge bases, upload docu
 
 Documents are stored and indexed locally in SQLite. The first implementation uses Chinese/English keyword matching over overlapping text chunks; it does not require an external embedding API and is not vector-semantic search. Supported uploads are TXT, MD, CSV, JSON, HTML, DOCX and PDF. PDF extraction uses Poppler's `pdftotext`; on Ubuntu install it with `sudo apt-get install poppler-utils`. If it is unavailable, PDF uploads return a clear extraction error rather than silently indexing empty content. DOCX is parsed directly by the Go application.
 
+Knowledge-base access is configured in **平台管理 → 知识库管理**:
+
+- **公共**: every authenticated user can select and retrieve the enabled knowledge base.
+- **指定用户**: only the owner, administrators, and explicitly listed accounts can select and retrieve it.
+- **个人私有**: only the owner and administrators can access it.
+
+The owner and administrators can upload, delete, and manage documents. Assigned users receive retrieval-only access. The **我的知识库** page creates private knowledge bases; administrators set shared/assigned/private access in the platform-management tab. Existing knowledge bases are migrated as private with their current creator retained as owner, so the migration does not broaden access to previously private documents.
+
 ## Login settings and school SSO
 
 Open **平台管理 → 登录设置** to switch between local account/password login and school unified identity authentication. Local accounts are retained when SSO is enabled, but local password login is disabled until the administrator switches the mode back to local. When SSO mode is active, unauthenticated visits to `/login` automatically redirect to the school identity center; successful authentication returns the user to the AI conversation page.

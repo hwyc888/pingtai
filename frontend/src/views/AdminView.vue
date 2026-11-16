@@ -29,7 +29,7 @@ onMounted(load)
 </script>
 
 <template>
-  <main class="admin-page">
+  <main class="admin-page" :class="{ 'knowledge-admin-page': activeTab === 'knowledge' }">
     <header class="admin-header">
       <div>
         <div class="admin-brand-line"><BrandMark class="admin-brand-mark" /><p class="admin-eyebrow">超凡AI问答平台 · 管理中心</p></div>
@@ -58,7 +58,7 @@ onMounted(load)
       </nav>
 
       <ProviderManager v-if="activeTab === 'providers'" />
-      <KnowledgeManager v-else-if="activeTab === 'knowledge'" />
+      <KnowledgeManager v-else-if="activeTab === 'knowledge'" :admin-mode="true" />
       <LoginSettings v-else />
     </template>
   </main>

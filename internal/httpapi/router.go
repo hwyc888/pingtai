@@ -91,6 +91,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("POST /knowledge/manage/versions/publish", knowledgeAccess(http.HandlerFunc(h.PublishLocalKnowledgeVersion)))
 
 	api.Handle("GET /knowledge/bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListAvailableKnowledgeBases)))
+	api.Handle("GET /knowledge/my-bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListMyKnowledgeBases)))
 
 	api.Handle("GET /agents/models", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListChatModels)))
 	api.Handle("POST /agents/createConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CreateConversation)))
