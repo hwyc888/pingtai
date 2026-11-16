@@ -802,3 +802,117 @@ button:disabled { cursor: not-allowed; }
 @media (max-width: 700px) {
   .knowledge-page-title img { width: 30px; height: 30px; }
 }
+
+/* Rich assistant messages, copyable code blocks and cancellable streaming. */
+.assistant-content {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.assistant-content > :first-child { margin-top: 0; }
+.assistant-content > :last-child { margin-bottom: 0; }
+.assistant-content p { margin: 0 0 12px; }
+.assistant-content h1, .assistant-content h2, .assistant-content h3,
+.assistant-content h4, .assistant-content h5, .assistant-content h6 {
+  margin: 20px 0 9px;
+  color: #303852;
+  font-weight: 750;
+  line-height: 1.4;
+}
+.assistant-content h1 { font-size: 22px; }
+.assistant-content h2 { font-size: 19px; }
+.assistant-content h3 { font-size: 16px; }
+.assistant-content ul, .assistant-content ol { margin: 8px 0 14px; padding-left: 24px; }
+.assistant-content li { margin: 4px 0; padding-left: 3px; }
+.assistant-content blockquote {
+  margin: 12px 0;
+  padding: 8px 14px;
+  border-left: 3px solid #9aa8ff;
+  border-radius: 0 9px 9px 0;
+  color: #66718b;
+  background: #f5f6ff;
+}
+.assistant-content a { color: #405bd7; text-decoration: underline; text-underline-offset: 2px; }
+.assistant-content table { display: block; width: 100%; margin: 12px 0; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
+.assistant-content th, .assistant-content td { min-width: 90px; padding: 8px 10px; border: 1px solid #e5e9f2; text-align: left; }
+.assistant-content th { color: #46516e; background: #f5f6fb; }
+.assistant-content :not(pre) > code {
+  padding: 2px 6px;
+  border: 1px solid #e8ebf4;
+  border-radius: 5px;
+  color: #bd426b;
+  font-size: .9em;
+  background: #f7f8fc;
+}
+.markdown-code-block {
+  margin: 14px 0;
+  overflow: hidden;
+  border: 1px solid #30394a;
+  border-radius: 12px;
+  background: #0d1117;
+}
+.markdown-code-toolbar {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px 5px 13px;
+  border-bottom: 1px solid #283142;
+  color: #aeb9cc;
+  font-size: 11px;
+  background: #151c28;
+}
+.markdown-code-actions { display: flex; align-items: center; gap: 6px; }
+.markdown-code-actions button {
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid #354155;
+  border-radius: 7px;
+  color: #d5dceb;
+  font-size: 10px;
+  background: #202a39;
+}
+.markdown-code-actions button:hover { border-color: #7185bb; color: #fff; background: #2a374a; }
+.markdown-code-block pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  tab-size: 2;
+  color: #d8dee9;
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre;
+}
+.markdown-code-block pre code { padding: 0; color: inherit; font: inherit; background: transparent; }
+.message-actions { flex-wrap: wrap; align-items: center; gap: 8px 15px; }
+.message-actions button { min-height: 26px; }
+.status-dot.stopped { background: #a3a9b8; box-shadow: none; animation: none; }
+.status-dot.failed { background: #d45b68; box-shadow: none; animation: none; }
+.stop-button {
+  display: inline-flex;
+  min-width: 74px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid #f0cbd0;
+  border-radius: 10px;
+  color: #bd4654;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fff3f4;
+}
+.stop-button:hover { border-color: #e7aab2; background: #ffe9ec; }
+.stop-button span { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
+@media (max-width: 700px) {
+  .assistant-content { font-size: 13px; }
+  .assistant-content h1 { font-size: 19px; }
+  .assistant-content h2 { font-size: 17px; }
+  .assistant-content h3 { font-size: 15px; }
+  .markdown-code-block pre { padding: 11px 12px; font-size: 11px; }
+  .markdown-code-toolbar { min-height: 35px; padding-left: 10px; }
+  .markdown-code-actions button { min-height: 25px; padding: 0 7px; }
+  .message-actions { gap: 5px 11px; }
+}

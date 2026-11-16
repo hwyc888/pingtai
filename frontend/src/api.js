@@ -76,7 +76,34 @@ export async function request(path, options = {}) {
   return data
 }
 
+export async function streamRequest(path, options = {}) {
+  const { method = 'POST', params, body, auth = true, retry = true, headers: customHeaders = {}, signal } = options
+  const headers = new Headers(customHeaders)
+  let payload = body
+  if (payload !== undefined && payload !== null && !(payload instanceof FormData) && typeof payload !== 'string') {
+    headers.set('Content-Type', 'application/json')
+    payload = JSON.stringify(payload)
+  }
+  const response = await fetch(buildURL(path, params), {
+    method, headers, body: method === 'GET' || method === 'HEAD' ? undefined : payload,
+    credentials: 'same-origin', signal,
+  })
+  if (response.status === 401 && auth && retry) {
+    const refreshed = await refreshAccessToken().catch(() => false)
+    if (refreshed) return streamRequest(path, { ...options, retry: false })
+    clearAuth()
+    if (window.location.pathname !== '/login') window.location.assign('/login')
+  }
+  if (!response.ok) {
+    const data = await readResponse(response)
+    throw new Error(data?.error?.message || data?.msg || `HTTP ${response.status}`)
+  }
+  return response
+}
 export const api = {
+  stream(path, body, options = {}) {
+    return streamRequest(path, { ...options, method: 'POST', body })
+  },
   get(path, params, options = {}) {
     return request(path, { ...options, method: 'GET', params })
   },

@@ -101,6 +101,10 @@ func (h *Handler) chatCoze(w http.ResponseWriter, r *http.Request) {
 		h.writeCozeResponse(w, resp)
 		return
 	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream") {
+		proxyChatEventStream(w, resp)
+		return
+	}
 	defer resp.Body.Close()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -215,10 +219,11 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 
 	messages := budget.Messages
 
+	streaming := r.FormValue("stream") == "1"
 	payload := map[string]any{
 		"model":    selectedModel,
 		"messages": messages,
-		"stream":   false,
+		"stream":   streaming,
 	}
 	if activeConfig.ChatProvider == "openai" && activeConfig.OpenAIMaxTokens > 0 {
 		outputLimit := int64(activeConfig.OpenAIMaxTokens)
@@ -232,6 +237,17 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		}
 		payload["max_tokens"] = int(outputLimit)
 	}
+	if streaming {
+		body, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", marshalErr.Error())
+			writeError(w, http.StatusInternalServerError, "序列化流式请求失败")
+			return
+		}
+		h.streamModelChat(w, r, openai.NewClient(activeConfig), chatID, conversationID, body)
+		return
+	}
+
 	body, status, callErr := openai.NewClient(activeConfig).Complete(r.Context(), payload)
 	if callErr != nil || status < 200 || status >= 300 {
 		message := "模型调用失败"

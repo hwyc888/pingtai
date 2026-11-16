@@ -119,11 +119,11 @@ func (r *ChatRepository) SaveMessageContent(ctx context.Context, messageID int64
 	return err
 }
 
-// ContextMessages selects complete successful turns, never orphaned messages from failed requests.
+// ContextMessages selects completed turns and intentionally retained stopped turns, never failed requests.
 func (r *ChatRepository) ContextMessages(ctx context.Context, conversationID string, turns int) ([]map[string]any, error) {
 	// Message IDs provide deterministic ordering even when multiple turns share a DATETIME second.
 	completedChats := "SELECT c.id FROM ai_chat c INNER JOIN ai_message latest ON latest.chat_id=c.id " +
-		"WHERE c.conversation_id=? AND c.status='completed' GROUP BY c.id ORDER BY MAX(latest.id) DESC"
+		"WHERE c.conversation_id=? AND c.status IN ('completed','stopped') GROUP BY c.id ORDER BY MAX(latest.id) DESC"
 	arguments := []any{conversationID}
 	if turns > 0 {
 		completedChats += " LIMIT ?"

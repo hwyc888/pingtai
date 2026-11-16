@@ -32,3 +32,49 @@ func TestParseModelAnswerVariants(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOpenAIStreamChunk(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		payload   string
+		content   string
+		reasoning string
+		wantError bool
+	}{
+		{
+			name: "text delta",
+			payload: `{"choices":[{"delta":{"content":"hello "}}]}`,
+			content: "hello ",
+		},
+		{
+			name: "reasoning delta",
+			payload: `{"choices":[{"delta":{"reasoning_content":"thinking"}}]}`,
+			reasoning: "thinking",
+		},
+		{
+			name: "multimodal text parts",
+			payload: `{"choices":[{"delta":{"content":[{"type":"text","text":"one"},{"type":"output_text","text":"two"}]}}]}`,
+			content: "onetwo",
+		},
+		{
+			name: "refusal delta",
+			payload: `{"choices":[{"delta":{"refusal":"cannot help"}}]}`,
+			content: "cannot help",
+		},
+		{
+			name: "provider error",
+			payload: `{"error":{"message":"rate limited"}}`,
+			wantError: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			content, reasoning, err := parseOpenAIStreamChunk(test.payload)
+			if (err != nil) != test.wantError {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if content != test.content || reasoning != test.reasoning {
+				t.Fatalf("content=%q reasoning=%q", content, reasoning)
+			}
+		})
+	}
+}

@@ -5,6 +5,10 @@ import { api } from '../api'
 import BrandMark from '../components/BrandMark.vue'
 import { clearAuth } from '../auth'
 import { copy } from '../copy'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import hljs from 'highlight.js/lib/common'
+import 'highlight.js/styles/github-dark.css'
 
 const router = useRouter()
 const username = ref(localStorage.getItem('username') || '用户')
@@ -29,6 +33,8 @@ const showNoProviderModal = ref(false)
 const showHistoryDrawer = ref(false)
 const messageList = ref(null)
 let disposed = false
+let activeRequestController = null
+let stopRequested = false
 
 const usernameInitial = computed(() => (username.value || 'U').trim().slice(0, 1).toUpperCase())
 const canSend = computed(() => !isSending.value && Boolean(draft.value.trim()))
@@ -124,41 +130,134 @@ function formatDate(value) {
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
 }
 
-function wait(milliseconds) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+async function readEventStream(response, onEvent) {
+  if (!response.body) throw new Error('当前浏览器不支持流式响应')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  async function dispatch(frame) {
+    let event = 'message'
+    const data = []
+    for (const rawLine of frame.split('\n')) {
+      const line = rawLine.replace(/\r$/, '')
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+    }
+    if (data.length) await onEvent(event, data.join('\n'))
+  }
+  try {
+    while (true) {
+      const result = await reader.read()
+      buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done })
+      buffer = buffer.replace(/\r\n/g, '\n')
+      let boundary = buffer.indexOf('\n\n')
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        await dispatch(frame)
+        boundary = buffer.indexOf('\n\n')
+      }
+      if (result.done) break
+    }
+    if (buffer.trim()) await dispatch(buffer)
+  } catch (error) {
+    await reader.cancel().catch(() => {})
+    throw error
+  } finally {
+    reader.releaseLock()
+  }
 }
 
-async function pollForChat(chatId, assistantIndex) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (disposed) return
-    await wait(attempt === 0 ? 400 : 1000)
-    const detailResult = await api.get('/agents/getChatDetail', {
-      conversation_id: conversationId.value,
-      chat_id: chatId,
-    })
-    const detail = assertSuccess(detailResult)
-    if (detail.status === 'failed') throw new Error(detail.last_error || copy.requestFailed)
-    if (detail.status === 'completed' || detail.status === 'success') {
-      const messageResult = await api.get('/agents/getChatMessage', {
-        conversation_id: conversationId.value,
-        chat_id: chatId,
-      })
-      const data = assertSuccess(messageResult)
-      const list = Array.isArray(data) ? data : (Array.isArray(data.messages) ? data.messages : [])
-      const assistant = [...list].reverse().find((item) => item?.role === 'assistant') || list[1]
-      if (!assistant) throw new Error(copy.requestFailed)
-      messages.value[assistantIndex] = {
-        id: assistant.id || chatId,
-        role: 'assistant',
-        content: normalizeContent(assistant.content ?? assistant.text),
-        reasoning_content: normalizeContent(assistant.reasoning_content),
-        pending: false,
-      }
-      scrollToBottom()
-      return
-    }
+function parseEventPayload(raw) {
+  try { return JSON.parse(raw) } catch { return raw }
+}
+
+function appendAssistantContent(index, value) {
+  if (typeof value !== 'string' || !value) return
+  const message = messages.value[index]
+  if (!message) return
+  message.content += value
+  scrollToBottom()
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character])
+}
+
+function renderMarkdown(content) {
+  const renderer = new marked.Renderer()
+  renderer.code = ({ text, lang }) => {
+    const language = String(lang || 'text').split(/\s+/)[0].toLowerCase()
+    const safeLanguage = escapeHTML(language || 'text')
+    let highlighted = escapeHTML(text)
+    try {
+      highlighted = language && hljs.getLanguage(language)
+        ? hljs.highlight(text, { language }).value
+        : hljs.highlightAuto(text).value
+    } catch { /* Keep the escaped code if highlighting is unavailable. */ }
+    return '<div class="markdown-code-block">' +
+      '<div class="markdown-code-toolbar"><span>' + safeLanguage + '</span>' +
+      '<div class="markdown-code-actions">' +
+      '<button type="button" data-code-action="copy">复制代码</button>' +
+      '<button type="button" data-code-action="save">保存代码</button>' +
+      '</div></div><pre><code class="hljs language-' + safeLanguage + '">' + highlighted + '</code></pre></div>\n'
   }
-  throw new Error(copy.requestFailed)
+  const html = marked.parse(String(content || ''), { renderer, gfm: true, breaks: true })
+  return DOMPurify.sanitize(html, { ADD_ATTR: ['data-code-action'] })
+}
+
+async function copyText(value) {
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+  } catch {
+    const input = document.createElement('textarea')
+    input.value = value
+    input.style.position = 'fixed'
+    input.style.opacity = '0'
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    input.remove()
+  }
+}
+
+function downloadText(value, filename, mimeType = 'text/plain;charset=utf-8') {
+  const blob = new Blob([value], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function saveAssistantMarkdown(message, index) {
+  if (message?.content) downloadText(message.content, '超凡AI回答-' + (index + 1) + '.md', 'text/markdown;charset=utf-8')
+}
+
+function saveAssistantText(message, index) {
+  if (message?.content) downloadText(message.content, '超凡AI回答-' + (index + 1) + '.txt')
+}
+
+function handleAssistantAction(event, message, index) {
+  const button = event.target.closest('[data-code-action]')
+  if (!button) return
+  const block = button.closest('.markdown-code-block')
+  const code = block?.querySelector('pre code')?.textContent || ''
+  if (!code) return
+  if (button.dataset.codeAction === 'copy') {
+    copyText(code)
+    return
+  }
+  const match = block?.querySelector('code')?.className.match(/language-([a-z0-9+#.-]+)/i)
+  const language = match?.[1]?.toLowerCase() || 'txt'
+  const extensions = { javascript: 'js', typescript: 'ts', python: 'py', golang: 'go', go: 'go', bash: 'sh', shell: 'sh', json: 'json', html: 'html', css: 'css', sql: 'sql', java: 'java', rust: 'rs', csharp: 'cs', markdown: 'md' }
+  downloadText(code, '超凡AI代码-' + (index + 1) + '.' + (extensions[language] || language || 'txt'))
 }
 
 function isImageFile(file) {
@@ -218,14 +317,9 @@ async function deleteConversation(item) {
 async function sendMessage(text = draft.value, options = {}) {
   const content = String(text || '').trim()
   if (!content || isSending.value) return
-
   isSending.value = true
   pageError.value = ''
-  try {
-    // Refresh on send as well as on page load, so a provider activated in
-    // another tab becomes available without a browser or service restart.
-    await loadModels()
-  } catch (error) {
+  try { await loadModels() } catch (error) {
     pageError.value = error?.message || copy.requestFailed
     isSending.value = false
     return
@@ -238,75 +332,103 @@ async function sendMessage(text = draft.value, options = {}) {
   showNoProviderModal.value = false
   const selectedFile = options.regenerate ? null : attachment.value
   if (!conversationId.value) {
-    try {
-      await createConversation()
-    } catch (error) {
+    try { await createConversation() } catch (error) {
       pageError.value = error?.message || copy.noConversation
       isSending.value = false
       return
     }
   }
-
-  if (!options.regenerate) {
-    messages.value.push({ id: 'user-' + Date.now(), role: 'user', content })
-  }
+  if (!options.regenerate) messages.value.push({ id: 'user-' + Date.now(), role: 'user', content })
   const assistantIndex = messages.value.push({
-    id: 'assistant-' + Date.now(),
-    role: 'assistant',
-    content: '',
-    reasoning_content: '',
-    pending: true,
+    id: 'assistant-' + Date.now(), role: 'assistant', content: '', reasoning_content: '',
+    pending: true, stopped: false,
   }) - 1
-  if (!options.regenerate) {
-    draft.value = ''
-    attachment.value = null
-  }
+  if (!options.regenerate) { draft.value = ''; attachment.value = null }
   scrollToBottom()
-
+  const controller = new AbortController()
+  activeRequestController = controller
+  stopRequested = false
+  let chatId = ''
+  let cozeReceivedDelta = false
   try {
     const form = new FormData()
     form.append('conversation_id', conversationId.value)
     form.append('bot_id', selectedBot.value.bot_id)
-    form.append('stream', '2')
+    form.append('stream', '1')
     form.append('content', content)
     form.append('knowledge_base_id', knowledgeEnabled.value ? selectedKnowledgeBaseId.value : '')
     form.append('up_type', selectedFile ? (isImageFile(selectedFile) ? 'image' : 'file') : '')
     form.append('url', '')
     if (selectedFile) form.append('file', selectedFile)
-
-    const result = await api.post('/agents/chat', form)
-    const data = assertSuccess(result)
-    const chatId = data.id || data.chat_id
-    if (!chatId) throw new Error(result?.msg || copy.requestFailed)
-    await pollForChat(chatId, assistantIndex)
-    await loadConversationHistory()
-  } catch (error) {
-    if (messages.value[assistantIndex]) {
-      messages.value[assistantIndex] = {
-        ...messages.value[assistantIndex],
-        content: error?.message || copy.requestFailed,
-        pending: false,
-        failed: true,
-      }
+    const response = await api.stream('/agents/chat', form, { signal: controller.signal, headers: { Accept: 'text/event-stream' } })
+    const contentType = response.headers.get('content-type') || ''
+    if (!contentType.includes('text/event-stream')) {
+      const payload = await response.json().catch(() => ({}))
+      throw new Error(payload?.msg || payload?.error?.message || '模型没有返回流式响应')
     }
-    const message = error?.message || copy.requestFailed
-    if (message.includes('当前没有配置模型渠道')) {
-      messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
-      if (!options.regenerate) {
-        draft.value = content
-        attachment.value = selectedFile
+    await readEventStream(response, async (event, raw) => {
+      const payload = parseEventPayload(raw)
+      const data = payload && typeof payload === 'object' ? payload : {}
+      if (event === 'start' || event === 'conversation.chat.created') {
+        chatId = data.id || data.chat_id || chatId
+        if (chatId) messages.value[assistantIndex].id = chatId
+      } else if (event === 'delta') {
+        appendAssistantContent(assistantIndex, data.content)
+      } else if (event === 'reasoning') {
+        if (typeof data.content === 'string') { messages.value[assistantIndex].reasoning_content += data.content; scrollToBottom() }
+      } else if (event === 'done') {
+        chatId = data.id || chatId
+        if (data.status === 'stopped') messages.value[assistantIndex].stopped = true
+        if (data.status === 'failed') messages.value[assistantIndex].failed = true
+      } else if (event === 'error') {
+        throw new Error(data.message || (typeof payload === 'string' ? payload : '模型生成失败'))
+      } else if (event === 'conversation.message.delta') {
+        const isAnswer = data.type === 'answer' || (!data.type && data.role === 'assistant')
+        if (isAnswer && typeof data.content === 'string') { cozeReceivedDelta = true; appendAssistantContent(assistantIndex, data.content) }
+      } else if (event === 'conversation.message.completed') {
+        if (!cozeReceivedDelta && data.type === 'answer' && typeof data.content === 'string') {
+          messages.value[assistantIndex].content = data.content
+          scrollToBottom()
+        }
+      } else if (event === 'conversation.chat.failed') {
+        throw new Error(data.last_error || data.error_message || data.message || '模型生成失败')
       }
-      showNoProviderModal.value = true
-      pageError.value = ''
+    })
+    if (!stopRequested && !disposed) {
+      messages.value[assistantIndex].pending = false
+      await loadConversationHistory()
+    }
+  } catch (error) {
+    const assistant = messages.value[assistantIndex]
+    if (assistant) {
+      assistant.pending = false
+      if (stopRequested || error?.name === 'AbortError') assistant.stopped = true
+      else { assistant.failed = true; if (!assistant.content) assistant.content = error?.message || copy.requestFailed }
+    }
+    if (stopRequested || error?.name === 'AbortError') {
+      if (!disposed) await loadConversationHistory()
     } else {
-      pageError.value = message
+      const message = error?.message || copy.requestFailed
+      if (message.includes('当前没有配置模型渠道')) {
+        messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
+        if (!options.regenerate) { draft.value = content; attachment.value = selectedFile }
+        showNoProviderModal.value = true
+        pageError.value = ''
+      } else pageError.value = message
     }
     scrollToBottom()
   } finally {
+    if (activeRequestController === controller) activeRequestController = null
     isSending.value = false
+    stopRequested = false
   }
 }
 
+function stopGeneration() {
+  if (!activeRequestController || !isSending.value) return
+  stopRequested = true
+  activeRequestController.abort()
+}
 function handleFileChange(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
@@ -332,21 +454,7 @@ function handleComposerKeydown(event) {
   }
 }
 
-async function copyMessage(content) {
-  if (!content) return
-  try {
-    await navigator.clipboard.writeText(content)
-  } catch {
-    const input = document.createElement('textarea')
-    input.value = content
-    input.style.position = 'fixed'
-    input.style.opacity = '0'
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    input.remove()
-  }
-}
+async function copyMessage(content) { await copyText(content) }
 
 function regenerateMessage(index) {
   const previousUser = [...messages.value.slice(0, index)].reverse().find((item) => item.role === 'user')
@@ -385,6 +493,10 @@ async function logout() {
 onMounted(initialize)
 onBeforeUnmount(() => {
   disposed = true
+  if (activeRequestController) {
+    stopRequested = true
+    activeRequestController.abort()
+  }
 })
 </script>
 
@@ -415,17 +527,19 @@ onBeforeUnmount(() => {
           <BrandMark class="assistant-avatar" />
           <div class="assistant-card">
             <div class="assistant-status">
-              <span class="status-dot" :class="{ busy: message.pending }"></span>
-              {{ message.pending ? copy.thinking : copy.thinkingDone }}
+              <span class="status-dot" :class="{ busy: message.pending, stopped: message.stopped, failed: message.failed }"></span>
+              {{ message.pending ? '正在生成' : message.stopped ? '已停止生成' : message.failed ? '生成未完成' : copy.thinkingDone }}
             </div>
             <details v-if="message.reasoning_content" class="reasoning-block">
               <summary>{{ copy.reasoning }}</summary>
               <p>{{ message.reasoning_content }}</p>
             </details>
-            <div class="assistant-content" :class="{ 'assistant-content-failed': message.failed }">{{ message.pending ? '' : message.content }}</div>
-            <div v-if="!message.pending && message.content" class="message-actions">
-              <button type="button" @click="regenerateMessage(index)">{{ copy.regenerate }}</button>
-              <button type="button" @click="copyMessage(message.content)">{{ copy.copy }}</button>
+            <div class="assistant-content" :class="{ 'assistant-content-failed': message.failed }" @click="handleAssistantAction($event, message, index)" v-html="message.pending && !message.content ? '' : renderMarkdown(message.content)"></div>
+            <div v-if="message.content" class="message-actions">
+              <button type="button" @click="copyMessage(message.content)">复制全文</button>
+              <button type="button" @click="saveAssistantMarkdown(message, index)">保存 Markdown</button>
+              <button type="button" @click="saveAssistantText(message, index)">保存 TXT</button>
+              <button type="button" :disabled="isSending" @click="regenerateMessage(index)">{{ copy.regenerate }}</button>
             </div>
           </div>
         </template>
@@ -470,7 +584,8 @@ onBeforeUnmount(() => {
             <input type="file" accept=".txt,.jpg,.jpeg,.png" :disabled="isSending" @change="handleFileChange" />
             <span aria-hidden="true">+</span>
           </label>
-          <button class="send-button" type="button" :disabled="!canSend" :aria-label="copy.send" @click="sendMessage()">&#8593;</button>
+          <button v-if="isSending" class="stop-button" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><span></span>停止</button>
+          <button v-else class="send-button" type="button" :disabled="!canSend" :aria-label="copy.send" @click="sendMessage()">&#8593;</button>
         </div>
       </div>
     </footer>

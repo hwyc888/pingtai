@@ -91,3 +91,54 @@ func TestDeleteConversationRemovesOnlyOwnedConversationAndMessages(t *testing.T)
 		t.Fatalf("conversation cleanup incomplete: conversations=%d chats=%d messages=%d", conversations, chats, messages)
 	}
 }
+
+func TestContextMessagesIncludesStoppedPartialAnswers(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewChatRepository(db)
+	if err := repo.CreateConversation(ctx, "conversation-stopped", "alice", "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-stopped", "conversation-stopped", "in_progress"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-stopped", "chat-stopped", "user", "question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-stopped", "chat-stopped", "assistant", "partial answer", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateChat(ctx, "chat-stopped", "stopped", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-failed", "conversation-stopped", "in_progress"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-stopped", "chat-failed", "user", "failed question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-stopped", "chat-failed", "assistant", "must not enter context", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateChat(ctx, "chat-failed", "failed", "upstream error"); err != nil {
+		t.Fatal(err)
+	}
+
+	messages, err := repo.ContextMessages(ctx, "conversation-stopped", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected the stopped turn to remain in context, got %#v", messages)
+	}
+	if messages[0]["content"] != "question" || messages[1]["content"] != "partial answer" {
+		t.Fatalf("unexpected stopped turn context: %#v", messages)
+	}
+}
