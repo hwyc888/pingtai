@@ -785,3 +785,20 @@ button:disabled { cursor: not-allowed; }
   .knowledge-manager .knowledge-upload > span { min-width: 0; }
   .knowledge-admin-page > .admin-header { align-items: flex-start; flex-direction: column; }
 }
+
+
+/* Knowledge base logo: reuse the repository-provided zhishiku artwork. */
+.knowledge-page-title { display: flex; align-items: center; gap: 10px; }
+.knowledge-page-title img { width: 34px; height: 34px; flex: 0 0 auto; object-fit: contain; }
+.knowledge-heading-with-icon { display: flex; align-items: center; gap: 8px; }
+.knowledge-heading-with-icon img { width: 22px; height: 22px; flex: 0 0 auto; object-fit: contain; }
+.knowledge-list-item-title { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.knowledge-list-item-title img { width: 22px; height: 22px; flex: 0 0 22px; object-fit: contain; }
+.knowledge-list-item-title strong { min-width: 0; overflow-wrap: anywhere; }
+.knowledge-empty-icon { display: flex; align-items: center; justify-content: center; }
+.knowledge-empty-icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.knowledge-toggle-icon { width: 18px; height: 18px; flex: 0 0 auto; object-fit: contain; }
+.knowledge-toggle { gap: 7px; }
+@media (max-width: 700px) {
+  .knowledge-page-title img { width: 30px; height: 30px; }
+}

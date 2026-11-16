@@ -270,7 +270,7 @@ onMounted(async () => {
     <section class="admin-card">
       <div class="admin-card-heading">
         <div>
-          <h2>{{ canConfigurePermissions ? '创建知识库' : '创建个人知识库' }}</h2>
+          <h2 class="knowledge-heading-with-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" />{{ canConfigurePermissions ? '创建知识库' : '创建个人知识库' }}</h2>
           <p>{{ canConfigurePermissions ? '设置知识库归属与使用范围，授权用户只可检索，不能修改文档。' : '新建知识库默认仅自己和平台管理员可访问。' }}</p>
         </div>
       </div>
@@ -305,13 +305,13 @@ onMounted(async () => {
     <div v-else class="knowledge-layout">
       <aside class="knowledge-sidebar admin-card">
         <div class="admin-card-heading">
-          <div><h2>知识库列表</h2><p>{{ bases.length }} 个知识库</p></div>
+          <div><h2 class="knowledge-heading-with-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" />知识库列表</h2><p>{{ bases.length }} 个知识库</p></div>
           <button class="admin-secondary" type="button" :disabled="saving" @click="loadBases">刷新</button>
         </div>
         <button v-for="base in bases" :key="base.id" type="button"
           class="knowledge-list-item" :class="{ active: base.id === selectedBaseId }"
           @click="selectBase(base.id)">
-          <strong>{{ base.name }}</strong>
+          <span class="knowledge-list-item-title"><img src="/zhishiku.png" alt="" aria-hidden="true" /><strong>{{ base.name }}</strong></span>
           <small>{{ base.document_count }} 份文档 · {{ accessModeLabel(base.access_mode) }} · {{ base.enabled ? '已启用' : '已停用' }}</small>
         </button>
         <p v-if="!bases.length" class="admin-empty">还没有知识库，请先创建。</p>
@@ -321,7 +321,7 @@ onMounted(async () => {
         <template v-if="selectedBase">
           <div class="admin-card-heading">
             <div>
-              <h2>{{ selectedBase.name }}</h2>
+              <h2 class="knowledge-heading-with-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" />{{ selectedBase.name }}</h2>
               <p>{{ selectedBase.description || '尚未填写知识库说明' }}</p>
               <p class="knowledge-owner-line">归属：{{ selectedBase.owner_username || '未知' }} · {{ accessModeLabel(selectedBase.access_mode) }}<template v-if="canConfigurePermissions && selectedBase.access_mode === 'assigned'"> · 授权：{{ (selectedBase.member_usernames || []).join('、') || '暂无' }}</template></p>
             </div>
@@ -404,7 +404,7 @@ onMounted(async () => {
           </div>
         </template>
         <div v-else class="knowledge-unavailable">
-          <div class="knowledge-empty-icon">文</div>
+          <div class="knowledge-empty-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" /></div>
           <h2>{{ canConfigurePermissions ? '选择一个知识库' : '创建你的第一个知识库' }}</h2>
           <p>{{ canConfigurePermissions ? '选择左侧知识库查看文档，并在上方设置使用权限。' : '上传个人资料后，只有你本人和平台管理员可以查看与检索。' }}</p>
         </div>

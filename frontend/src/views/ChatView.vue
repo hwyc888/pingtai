@@ -444,6 +444,7 @@ onBeforeUnmount(() => {
         <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
         <label class="knowledge-toggle">
           <input v-model="knowledgeEnabled" type="checkbox" :disabled="!knowledgeBases.length || isSending" />
+          <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
           <span>使用知识库</span>
         </label>
         <select v-if="knowledgeBases.length" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="!knowledgeEnabled || isSending">
