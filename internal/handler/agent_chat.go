@@ -244,7 +244,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "序列化流式请求失败")
 			return
 		}
-		h.streamModelChat(w, r, openai.NewClient(activeConfig), chatID, conversationID, body)
+		h.streamModelChat(w, r, openai.NewClient(activeConfig), chatID, conversationID, userMessage.ID, body)
 		return
 	}
 

@@ -79,7 +79,7 @@ func TestStreamModelChatPersistsAndStreamsCompletedAnswer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
 
-	handler.streamModelChat(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", nil)
+	handler.streamModelChat(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", 1, nil)
 
 	if !strings.Contains(recorder.Body.String(), "event: delta") || !strings.Contains(recorder.Body.String(), "event: done") {
 		t.Fatalf("expected SSE deltas and completion event, got %s", recorder.Body.String())
@@ -112,7 +112,7 @@ func TestStreamModelChatKeepsPartialAnswerWhenCancelled(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		handler.streamModelChat(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", nil)
+		handler.streamModelChat(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", 1, nil)
 		close(done)
 	}()
 	<-body.first

@@ -15,6 +15,7 @@ func (h *Handler) ListChatModels(w http.ResponseWriter, r *http.Request) {
 				"models": []any{},
 				"default_model": "",
 				"configured": false,
+				"supports_message_edit": h.Config.UsesLocalConversations(),
 			},
 		})
 		return
@@ -39,6 +40,7 @@ func (h *Handler) ListChatModels(w http.ResponseWriter, r *http.Request) {
 			"models": items,
 			"default_model": defaultModel,
 			"configured": len(items) > 0,
+			"supports_message_edit": h.Config.UsesLocalConversations(),
 		},
 	})
 }

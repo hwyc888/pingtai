@@ -14,6 +14,9 @@ const router = useRouter()
 const username = ref(localStorage.getItem('username') || '用户')
 const isAdmin = ref(false)
 const models = ref([])
+const supportsMessageEdit = ref(false)
+const editingMessageId = ref('')
+const composerInput = ref(null)
 const knowledgeBases = ref([])
 const knowledgeEnabled = ref(false)
 const selectedKnowledgeBaseId = ref('')
@@ -57,6 +60,7 @@ function scrollToBottom() {
 async function loadModels() {
   const data = assertSuccess(await api.get('/agents/models'))
   models.value = Array.isArray(data.models) ? data.models : []
+  supportsMessageEdit.value = Boolean(data.supports_message_edit)
   const defaultModel = data.default_model
   const preferred = models.value.find((item) => item.name === defaultModel) || models.value[0] || null
   if (!models.value.some((item) => item.bot_id === selectedBot.value?.bot_id)) {
@@ -271,6 +275,8 @@ function selectModel(botID) {
 
 async function openConversation(item) {
   if (isSending.value) return
+  editingMessageId.value = ''
+  draft.value = ''
   historyError.value = ''
   try {
     const data = assertSuccess(await api.post('/agents/getMessageList', {
@@ -307,6 +313,8 @@ async function deleteConversation(item) {
     if (conversationId.value === item.id) {
       conversationId.value = ''
       messages.value = []
+      editingMessageId.value = ''
+      draft.value = ''
       if (selectedBot.value) await createConversation()
     }
   } catch (error) {
@@ -337,6 +345,26 @@ async function sendMessage(text = draft.value, options = {}) {
       isSending.value = false
       return
     }
+  }
+  if (editingMessageId.value && !options.regenerate) {
+    const editedIndex = messages.value.findIndex((message) => String(message.id) === editingMessageId.value)
+    if (editedIndex < 0) {
+      pageError.value = '找不到需要编辑的原消息，请重新打开历史会话。'
+      isSending.value = false
+      return
+    }
+    try {
+      assertSuccess(await api.post('/agents/editMessage', {
+        conversation_id: conversationId.value,
+        message_id: editingMessageId.value,
+      }))
+    } catch (error) {
+      pageError.value = error?.message || '编辑消息失败'
+      isSending.value = false
+      return
+    }
+    messages.value.splice(editedIndex)
+    editingMessageId.value = ''
   }
   if (!options.regenerate) messages.value.push({ id: 'user-' + Date.now(), role: 'user', content })
   const assistantIndex = messages.value.push({
@@ -372,6 +400,9 @@ async function sendMessage(text = draft.value, options = {}) {
       if (event === 'start' || event === 'conversation.chat.created') {
         chatId = data.id || data.chat_id || chatId
         if (chatId) messages.value[assistantIndex].id = chatId
+        if (data.user_message_id && messages.value[assistantIndex - 1]?.role === 'user') {
+          messages.value[assistantIndex - 1].id = data.user_message_id
+        }
       } else if (event === 'delta') {
         appendAssistantContent(assistantIndex, data.content)
       } else if (event === 'reasoning') {
@@ -456,6 +487,22 @@ function handleComposerKeydown(event) {
 
 async function copyMessage(content) { await copyText(content) }
 
+function beginEditMessage(index) {
+  if (!supportsMessageEdit.value || isSending.value) return
+  const message = messages.value[index]
+  if (!message || message.role !== 'user' || message.id == null) return
+  editingMessageId.value = String(message.id)
+  draft.value = message.content || ''
+  pageError.value = ''
+  nextTick(() => composerInput.value?.focus())
+}
+
+function cancelEditMessage() {
+  editingMessageId.value = ''
+  draft.value = ''
+  nextTick(() => composerInput.value?.blur())
+}
+
 function regenerateMessage(index) {
   const previousUser = [...messages.value.slice(0, index)].reverse().find((item) => item.role === 'user')
   if (previousUser) sendMessage(previousUser.content, { regenerate: true })
@@ -463,6 +510,7 @@ function regenerateMessage(index) {
 
 async function startNewConversation() {
   if (isSending.value) return
+  editingMessageId.value = ''
   messages.value = []
   draft.value = ''
   attachment.value = null
@@ -521,7 +569,12 @@ onBeforeUnmount(() => {
 
       <article v-for="(message, index) in messages" :key="message.id || index" class="message-row" :class="message.role === 'user' ? 'message-row-user' : 'message-row-assistant'">
         <template v-if="message.role === 'user'">
-          <div class="user-bubble">{{ message.content }}</div>
+          <div class="user-message-wrap">
+            <div class="user-bubble">{{ message.content }}</div>
+            <div v-if="supportsMessageEdit && !isSending" class="user-message-actions">
+              <button type="button" @click="beginEditMessage(index)">编辑</button>
+            </div>
+          </div>
         </template>
         <template v-else>
           <BrandMark class="assistant-avatar" />
@@ -566,12 +619,17 @@ onBeforeUnmount(() => {
         </select>
       </div>
       <div class="composer-shell">
+        <div v-if="editingMessageId" class="editing-message-bar">
+          <span>正在编辑已发送的问题，重新发送后该消息之后的回答将被替换</span>
+          <button type="button" :disabled="isSending" @click="cancelEditMessage">取消编辑</button>
+        </div>
         <div v-if="attachment" class="attachment-chip">
           <span class="attachment-icon">&#128196;</span>
           <span class="attachment-name">{{ attachment.name }}</span>
           <button type="button" :aria-label="copy.removeFile" @click="removeAttachment">&times;</button>
         </div>
         <textarea
+          ref="composerInput"
           v-model="draft"
           class="composer-input"
           rows="1"

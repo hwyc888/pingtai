@@ -142,3 +142,101 @@ func TestContextMessagesIncludesStoppedPartialAnswers(t *testing.T) {
 		t.Fatalf("unexpected stopped turn context: %#v", messages)
 	}
 }
+
+func TestPrepareMessageEditRemovesSelectedAndLaterTurns(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewChatRepository(db)
+	if err := repo.CreateConversation(ctx, "conversation-edit", "alice", "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-first", "conversation-edit", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-edit", "chat-first", "user", "first question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-edit", "chat-first", "assistant", "first answer", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-second", "conversation-edit", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	edited, err := repo.InsertMessage(ctx, "conversation-edit", "chat-second", "user", "old question", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-edit", "chat-second", "assistant", "old answer", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-third", "conversation-edit", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-edit", "chat-third", "user", "later question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-edit", "chat-third", "assistant", "later answer", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.PrepareMessageEdit(ctx, edited.ID, "conversation-edit", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	messages, err := repo.ListMessages(ctx, "conversation-edit", 100, "asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || messages[0].Content != "first question" || messages[1].Content != "first answer" {
+		t.Fatalf("edit should retain only earlier turns: %#v", messages)
+	}
+	var chats int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_chat WHERE conversation_id=?", "conversation-edit").Scan(&chats); err != nil {
+		t.Fatal(err)
+	}
+	if chats != 1 {
+		t.Fatalf("expected later chat rows removed, got %d", chats)
+	}
+}
+
+func TestPrepareMessageEditRequiresOwnedUserMessageAndCompletedTurn(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewChatRepository(db)
+	if err := repo.CreateConversation(ctx, "conversation-edit", "alice", "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-edit", "conversation-edit", "in_progress"); err != nil {
+		t.Fatal(err)
+	}
+	userMessage, err := repo.InsertMessage(ctx, "conversation-edit", "chat-edit", "user", "question", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistantMessage, err := repo.InsertMessage(ctx, "conversation-edit", "chat-edit", "assistant", "answer", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PrepareMessageEdit(ctx, userMessage.ID, "conversation-edit", "bob"); err == nil {
+		t.Fatal("another user must not edit this message")
+	}
+	if err := repo.PrepareMessageEdit(ctx, assistantMessage.ID, "conversation-edit", "alice"); err == nil {
+		t.Fatal("assistant messages must not be editable")
+	}
+	if err := repo.PrepareMessageEdit(ctx, userMessage.ID, "conversation-edit", "alice"); err == nil {
+		t.Fatal("an in-progress turn must not be editable")
+	}
+}

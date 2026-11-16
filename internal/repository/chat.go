@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -273,6 +274,62 @@ func (r *ChatRepository) DeleteConversation(ctx context.Context, id, userID stri
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_conversation WHERE id=? AND user_id=?", id, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+ // PrepareMessageEdit removes the selected user turn and every later turn in
+ // the same conversation. The client then resubmits the edited text as a new turn.
+func (r *ChatRepository) PrepareMessageEdit(ctx context.Context, messageID int64, conversationID, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var role, status string
+	err = tx.QueryRowContext(ctx,
+		"SELECT m.role,COALESCE(c.status,'') FROM ai_message m "+
+			"INNER JOIN ai_conversation v ON v.id=m.conversation_id "+
+			"LEFT JOIN ai_chat c ON c.id=m.chat_id "+
+			"WHERE m.id=? AND m.conversation_id=? AND v.user_id=? LIMIT 1",
+		messageID, conversationID, userID,
+	).Scan(&role, &status)
+	if err != nil {
+		return err
+	}
+	if role != "user" {
+		return errors.New("only user messages can be edited")
+	}
+	if status == "in_progress" {
+		return errors.New("this message is still generating a response")
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_message_context WHERE message_id IN "+
+			"(SELECT id FROM ai_message WHERE conversation_id=? AND id>=?)",
+		conversationID, messageID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_chat WHERE conversation_id=? AND id IN "+
+			"(SELECT DISTINCT chat_id FROM ai_message WHERE conversation_id=? AND id>=?)",
+		conversationID, conversationID, messageID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_message WHERE conversation_id=? AND id>=?",
+		conversationID, messageID,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE ai_conversation SET updated_at=? WHERE id=? AND user_id=?",
+		time.Now(), conversationID, userID,
+	); err != nil {
 		return err
 	}
 	return tx.Commit()

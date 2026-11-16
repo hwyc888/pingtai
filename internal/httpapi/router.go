@@ -98,6 +98,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("GET /agents/getConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetConversation)))
 	api.Handle("GET /agents/listConversations", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListConversations)))
 	api.Handle("POST /agents/deleteConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.DeleteConversation)))
+	api.Handle("POST /agents/editMessage", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.PrepareMessageEdit)))
 	api.Handle("POST /agents/chat", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.Chat)))
 	api.Handle("GET /agents/getChatDetail", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetChatDetail)))
 	api.Handle("GET /agents/getChatMessage", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetChatMessage)))

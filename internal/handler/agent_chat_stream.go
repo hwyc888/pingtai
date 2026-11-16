@@ -17,7 +17,7 @@ import (
 // retaining the accumulated answer so an interrupted generation is not lost.
 func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client interface {
 	Do(context.Context, []byte) (*http.Response, error)
-}, chatID, conversationID string, body []byte) {
+}, chatID, conversationID string, userMessageID int64, body []byte) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -93,7 +93,7 @@ func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client
 		return
 	}
 
-	if !emit("start", map[string]any{"id": chatID}) {
+	if !emit("start", map[string]any{"id": chatID, "user_message_id": userMessageID}) {
 		status = "stopped"
 		status = persist(status, "")
 		return
