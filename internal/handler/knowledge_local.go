@@ -40,6 +40,9 @@ func (h *Handler) isKnowledgeAdmin(ctx context.Context, username string) bool {
 
 func (h *Handler) canAccessKnowledgeBase(ctx context.Context, username, baseID string) (bool, error) {
 	canUse, _, err := h.knowledgeAccess(ctx, username, baseID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
 	return canUse, err
 }
 
