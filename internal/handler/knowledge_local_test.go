@@ -93,6 +93,8 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 	}
 	_, err = db.Exec(`CREATE TABLE ai_knowledge_base (
 		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL DEFAULT '',
+		enabled INTEGER NOT NULL DEFAULT 1,
 		created_by TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
@@ -142,7 +144,7 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 			t.Errorf("%s access to %s = %v, want %v", tc.username, tc.baseID, got, tc.want)
 		}
 	}
-	if _, err := h.knowledgePrompt(ctx, "alice", "kb-bob", "private material"); err == nil {
-		t.Fatal("a user must not retrieve another user's knowledge base")
+	if _, err := h.knowledgePrompt(ctx, "alice", "kb-bob", "private material"); err == nil || err.Error() != "所选知识库不存在或无权访问" {
+		t.Fatalf("a user must not retrieve another user's knowledge base, got error: %v", err)
 	}
 }
