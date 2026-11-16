@@ -100,6 +100,22 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	_, err = db.Exec(`CREATE TABLE ai_knowledge_base_policy (
+		base_id TEXT PRIMARY KEY,
+		owner_username TEXT NOT NULL,
+		access_mode TEXT NOT NULL
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE ai_knowledge_base_member (
+		base_id TEXT NOT NULL,
+		username TEXT NOT NULL,
+		PRIMARY KEY (base_id, username)
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, user := range []struct {
 		name string
 		role int
@@ -113,6 +129,9 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 		}
 	}
 	if _, err := db.Exec("INSERT INTO ai_knowledge_base (id,created_by) VALUES ('kb-alice','alice'),('kb-bob','bob')"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO ai_knowledge_base_policy (base_id,owner_username,access_mode) VALUES ('kb-alice','alice','private'),('kb-bob','bob','private')"); err != nil {
 		t.Fatal(err)
 	}
 
