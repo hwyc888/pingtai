@@ -1014,3 +1014,130 @@ button:disabled { cursor: not-allowed; }
   .chat-header-actions { gap: 5px; }
   .clear-current-button { min-height: 31px; padding: 0 8px; font-size: 10px; }
 }
+
+/* Knowledge chunk inspection and editing */
+.knowledge-document-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.knowledge-chunk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #e5e9f3;
+  border-radius: 14px;
+  background: #fbfcff;
+}
+.knowledge-chunk-heading,
+.knowledge-chunk-item-heading,
+.knowledge-add-chunk-heading,
+.knowledge-chunk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.knowledge-chunk-heading h3 {
+  margin: 0 0 5px;
+  color: #39435f;
+  font-size: 15px;
+  font-weight: 750;
+}
+.knowledge-chunk-heading p {
+  margin: 0;
+  color: #9098ad;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.knowledge-add-chunk {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid #e8ebf4;
+  border-radius: 11px;
+  background: #fff;
+}
+.knowledge-add-chunk-heading strong {
+  color: #59637e;
+  font-size: 12px;
+}
+.knowledge-add-chunk-heading span,
+.knowledge-chunk-item-heading span,
+.knowledge-chunk-actions > span {
+  color: #9aa2b5;
+  font-size: 10px;
+}
+.knowledge-add-chunk textarea,
+.knowledge-chunk-editor {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid #e2e6f0;
+  border-radius: 9px;
+  outline: none;
+  color: #48536f;
+  font: 12px/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #fff;
+}
+.knowledge-add-chunk textarea:focus,
+.knowledge-chunk-editor:focus {
+  border-color: #aab7ff;
+  box-shadow: 0 0 0 3px rgba(75,99,230,.08);
+}
+.knowledge-chunk-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.knowledge-chunk-list {
+  display: flex;
+  max-height: 680px;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+.knowledge-chunk-item {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e7eaf2;
+  border-radius: 10px;
+  background: #fff;
+}
+.knowledge-chunk-item-heading {
+  margin-bottom: 8px;
+}
+.knowledge-chunk-item-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.knowledge-chunk-item-heading strong {
+  color: #56617d;
+  font-size: 11px;
+}
+.knowledge-chunk-content {
+  max-height: 300px;
+  margin: 0;
+  overflow: auto;
+  color: #515c76;
+  font: 12px/1.8 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.knowledge-chunk-editor {
+  min-height: 150px;
+  margin-bottom: 8px;
+}
+@media (max-width: 760px) {
+  .knowledge-chunk-panel { padding: 11px; }
+  .knowledge-document-actions { flex-wrap: wrap; gap: 5px; }
+  .knowledge-chunk-actions { align-items: flex-start; }
+  .knowledge-chunk-heading { align-items: flex-start; }
+}

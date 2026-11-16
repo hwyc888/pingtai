@@ -9,6 +9,13 @@ const bases = ref([])
 const selectedBaseId = ref('')
 const documents = ref([])
 const versions = ref([])
+const selectedDocument = ref(null)
+const chunks = ref([])
+const chunksLoading = ref(false)
+const chunkSaving = ref(false)
+const editingChunkId = ref('')
+const editChunkContent = ref('')
+const newChunkContent = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
@@ -69,6 +76,11 @@ async function loadBases() {
 async function loadSelectedBase() {
   const base = selectedBase.value
   if (!base) return
+  selectedDocument.value = null
+  chunks.value = []
+  editingChunkId.value = ''
+  editChunkContent.value = ''
+  newChunkContent.value = ''
   editName.value = base.name || ''
   editDescription.value = base.description || ''
   editEnabled.value = Boolean(base.enabled)
@@ -92,6 +104,89 @@ async function selectBase(id) {
     await loadSelectedBase()
   } catch (error) {
     errorMessage.value = error?.message || '读取知识库内容失败'
+  }
+}
+
+async function loadDocumentChunks(document) {
+  selectedDocument.value = document
+  chunks.value = []
+  editingChunkId.value = ''
+  editChunkContent.value = ''
+  chunksLoading.value = true
+  clearMessages()
+  try {
+    const data = assertSuccess(await api.get('/knowledge/manage/chunks', { document_id: document.id }))
+    chunks.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    errorMessage.value = error?.message || '读取文档分块失败'
+  } finally {
+    chunksLoading.value = false
+  }
+}
+
+function closeChunkPanel() {
+  selectedDocument.value = null
+  chunks.value = []
+  editingChunkId.value = ''
+  editChunkContent.value = ''
+  newChunkContent.value = ''
+}
+
+function beginEditChunk(chunk) {
+  editingChunkId.value = String(chunk.id)
+  editChunkContent.value = chunk.content || ''
+}
+
+function cancelEditChunk() {
+  editingChunkId.value = ''
+  editChunkContent.value = ''
+}
+
+async function saveChunk(chunk) {
+  const content = editChunkContent.value.trim()
+  if (!content) {
+    errorMessage.value = '分块内容不能为空。'
+    return
+  }
+  chunkSaving.value = true
+  clearMessages()
+  try {
+    assertSuccess(await api.post('/knowledge/manage/chunks/update', {
+      chunk_id: chunk.id,
+      content,
+    }))
+    editingChunkId.value = ''
+    editChunkContent.value = ''
+    await loadDocumentChunks(selectedDocument.value)
+    successMessage.value = '分块已保存，新的内容已立即用于知识库检索。'
+  } catch (error) {
+    errorMessage.value = error?.message || '保存分块失败'
+  } finally {
+    chunkSaving.value = false
+  }
+}
+
+async function addChunk() {
+  if (!selectedDocument.value || !newChunkContent.value.trim()) {
+    errorMessage.value = '请先填写要添加的分块内容。'
+    return
+  }
+  chunkSaving.value = true
+  clearMessages()
+  try {
+    const document = selectedDocument.value
+    assertSuccess(await api.post('/knowledge/manage/chunks/create', {
+      document_id: document.id,
+      content: newChunkContent.value.trim(),
+    }))
+    newChunkContent.value = ''
+    await loadDocumentChunks(document)
+    document.chunk_count = chunks.value.length
+    successMessage.value = '新分块已添加，并已立即用于知识库检索。'
+  } catch (error) {
+    errorMessage.value = error?.message || '添加分块失败'
+  } finally {
+    chunkSaving.value = false
   }
 }
 
@@ -198,6 +293,10 @@ async function uploadFiles() {
 
 async function deleteDocument(document) {
   if (!window.confirm('确定从知识库中删除“' + document.filename + '”吗？')) return
+  if (selectedDocument.value?.id === document.id) {
+    selectedDocument.value = null
+    chunks.value = []
+  }
   saving.value = true
   clearMessages()
   try {
@@ -364,19 +463,69 @@ onMounted(async () => {
 
           <div class="admin-table-wrap">
             <table class="admin-table">
-              <thead><tr><th>文档名称</th><th>大小</th><th>文本片段</th><th>上传时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>文档名称</th><th>大小</th><th>文本分块</th><th>上传时间</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="document in documents" :key="document.id">
                   <td>{{ document.filename }}</td>
                   <td>{{ formatBytes(document.size_bytes) }}</td>
                   <td>{{ document.chunk_count }}</td>
                   <td>{{ formatDate(document.created_at) }}</td>
-                  <td><button class="admin-text-button danger" type="button" :disabled="saving" @click="deleteDocument(document)">删除</button></td>
+                  <td class="knowledge-document-actions">
+                    <button class="admin-text-button" type="button" :disabled="chunksLoading" @click="loadDocumentChunks(document)">查看分块</button>
+                    <button class="admin-text-button danger" type="button" :disabled="saving" @click="deleteDocument(document)">删除</button>
+                  </td>
                 </tr>
                 <tr v-if="!documents.length"><td colspan="5" class="admin-empty">暂无文档，请上传需要检索的资料。</td></tr>
               </tbody>
             </table>
           </div>
+
+          <section v-if="selectedDocument" class="knowledge-chunk-panel">
+            <div class="knowledge-chunk-heading">
+              <div>
+                <h3>文档分块管理</h3>
+                <p>{{ selectedDocument.filename }} · {{ chunks.length }} 个分块</p>
+              </div>
+              <button class="admin-secondary" type="button" :disabled="chunkSaving" @click="closeChunkPanel">收起</button>
+            </div>
+
+            <div class="knowledge-add-chunk">
+              <div class="knowledge-add-chunk-heading">
+                <strong>添加新分块</strong>
+                <span>最多 12000 字符</span>
+              </div>
+              <textarea v-model="newChunkContent" rows="4" maxlength="12000" placeholder="输入需要补充到该文档的新知识内容…" :disabled="chunkSaving"></textarea>
+              <div class="knowledge-chunk-actions">
+                <span>{{ newChunkContent.length }} / 12000</span>
+                <button class="admin-primary" type="button" :disabled="chunkSaving || !newChunkContent.trim()" @click="addChunk">{{ chunkSaving ? '保存中…' : '添加分块' }}</button>
+              </div>
+            </div>
+
+            <div v-if="chunksLoading" class="admin-empty">正在读取分块内容…</div>
+            <div v-else-if="!chunks.length" class="admin-empty">该文档还没有分块，可以在上方手动添加。</div>
+            <div v-else class="knowledge-chunk-list">
+              <article v-for="(chunk, index) in chunks" :key="chunk.id" class="knowledge-chunk-item">
+                <div class="knowledge-chunk-item-heading">
+                  <div>
+                    <strong>分块 {{ Number(chunk.chunk_index) + 1 }}</strong>
+                    <span>{{ chunk.character_count ?? (chunk.content || '').length }} 字</span>
+                  </div>
+                  <button v-if="editingChunkId !== String(chunk.id)" class="admin-text-button" type="button" :disabled="chunkSaving" @click="beginEditChunk(chunk)">编辑内容</button>
+                </div>
+                <template v-if="editingChunkId === String(chunk.id)">
+                  <textarea v-model="editChunkContent" class="knowledge-chunk-editor" rows="7" maxlength="12000" :disabled="chunkSaving"></textarea>
+                  <div class="knowledge-chunk-actions">
+                    <span>{{ editChunkContent.length }} / 12000</span>
+                    <div>
+                      <button class="admin-secondary" type="button" :disabled="chunkSaving" @click="cancelEditChunk">取消</button>
+                      <button class="admin-primary" type="button" :disabled="chunkSaving || !editChunkContent.trim()" @click="saveChunk(chunk)">{{ chunkSaving ? '保存中…' : '保存修改' }}</button>
+                    </div>
+                  </div>
+                </template>
+                <pre v-else class="knowledge-chunk-content">{{ chunk.content }}</pre>
+              </article>
+            </div>
+          </section>
 
           <div class="knowledge-version-panel">
             <div class="admin-card-heading">
