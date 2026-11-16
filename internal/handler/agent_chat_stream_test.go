@@ -95,7 +95,7 @@ func TestStreamModelChatPersistsAndStreamsCompletedAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 || messages[2].Content != "hello world" {
+	if len(messages) != 2 || messages[1].Content != "hello world" {
 		t.Fatalf("unexpected persisted messages: %#v", messages)
 	}
 }
@@ -130,7 +130,7 @@ func TestStreamModelChatKeepsPartialAnswerWhenCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 3 || messages[2].Content != "partial answer" {
+	if len(messages) != 2 || messages[1].Content != "partial answer" {
 		t.Fatalf("partial assistant answer was not saved: %#v", messages)
 	}
 }
