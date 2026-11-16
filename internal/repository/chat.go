@@ -254,6 +254,79 @@ func (r *ChatRepository) ListConversations(ctx context.Context, userID string, l
 	return items, rows.Err()
 }
 
+
+func (r *ChatRepository) ClearConversation(ctx context.Context, id, userID string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRowContext(ctx, "SELECT 1 FROM ai_conversation WHERE id=? AND user_id=?", id, userID).Scan(&exists); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_message_context WHERE message_id IN (SELECT id FROM ai_message WHERE conversation_id=?)",
+		id,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_message WHERE conversation_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM ai_chat WHERE conversation_id=?", id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE ai_conversation SET updated_at=? WHERE id=? AND user_id=?",
+		time.Now(), id, userID,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *ChatRepository) ClearAllConversations(ctx context.Context, userID string) (int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_message_context WHERE message_id IN ("+
+			"SELECT m.id FROM ai_message m INNER JOIN ai_conversation v ON v.id=m.conversation_id WHERE v.user_id=?)",
+		userID,
+	); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_message WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id=?)",
+		userID,
+	); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx,
+		"DELETE FROM ai_chat WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id=?)",
+		userID,
+	); err != nil {
+		return 0, err
+	}
+	result, err := tx.ExecContext(ctx, "DELETE FROM ai_conversation WHERE user_id=?", userID)
+	if err != nil {
+		return 0, err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
 func (r *ChatRepository) DeleteConversation(ctx context.Context, id, userID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

@@ -240,3 +240,112 @@ func TestPrepareMessageEditRequiresOwnedUserMessageAndCompletedTurn(t *testing.T
 		t.Fatal("an in-progress turn must not be editable")
 	}
 }
+
+func TestClearConversationKeepsConversationButRemovesMessages(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewChatRepository(db)
+	if err := repo.CreateConversation(ctx, "conversation-clear", "alice", "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-clear", "conversation-clear", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-clear", "chat-clear", "user", "question", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-clear", "chat-clear", "assistant", "answer", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.ClearConversation(ctx, "conversation-clear", "bob"); err == nil {
+		t.Fatal("another user must not clear this conversation")
+	}
+	if err := repo.ClearConversation(ctx, "conversation-clear", "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	var conversations, chats, messages int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_conversation WHERE id=?", "conversation-clear").Scan(&conversations); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_chat WHERE conversation_id=?", "conversation-clear").Scan(&chats); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ai_message WHERE conversation_id=?", "conversation-clear").Scan(&messages); err != nil {
+		t.Fatal(err)
+	}
+	if conversations != 1 || chats != 0 || messages != 0 {
+		t.Fatalf("clear current conversation result: conversations=%d chats=%d messages=%d", conversations, chats, messages)
+	}
+}
+
+func TestClearAllConversationsOnlyDeletesCurrentUsersHistory(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewChatRepository(db)
+	for _, item := range []struct {
+		id    string
+		owner string
+		chat  string
+		text  string
+	}{
+		{id: "alice-a", owner: "alice", chat: "chat-alice-a", text: "alice question"},
+		{id: "alice-b", owner: "alice", chat: "chat-alice-b", text: "alice second question"},
+		{id: "bob-a", owner: "bob", chat: "chat-bob-a", text: "bob private question"},
+	} {
+		if err := repo.CreateConversation(ctx, item.id, item.owner, "bot"); err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.CreateChat(ctx, item.chat, item.id, "completed"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.InsertMessage(ctx, item.id, item.chat, "user", item.text, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deleted, err := repo.ClearAllConversations(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 2 {
+		t.Fatalf("expected two conversations deleted, got %d", deleted)
+	}
+
+	var aliceConversations, bobConversations, aliceChats, bobChats, aliceMessages, bobMessages int
+	checks := []struct {
+		query string
+		args  []any
+		dest  *int
+	}{
+		{"SELECT COUNT(*) FROM ai_conversation WHERE user_id='alice'", nil, &aliceConversations},
+		{"SELECT COUNT(*) FROM ai_conversation WHERE user_id='bob'", nil, &bobConversations},
+		{"SELECT COUNT(*) FROM ai_chat WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id='alice')", nil, &aliceChats},
+		{"SELECT COUNT(*) FROM ai_chat WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id='bob')", nil, &bobChats},
+		{"SELECT COUNT(*) FROM ai_message WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id='alice')", nil, &aliceMessages},
+		{"SELECT COUNT(*) FROM ai_message WHERE conversation_id IN (SELECT id FROM ai_conversation WHERE user_id='bob')", nil, &bobMessages},
+	}
+	for _, check := range checks {
+		if err := db.QueryRowContext(ctx, check.query, check.args...).Scan(check.dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if aliceConversations != 0 || bobConversations != 1 || aliceChats != 0 || bobChats != 1 || aliceMessages != 0 || bobMessages != 1 {
+		t.Fatalf("clear all history leaked across users: alice conversations/chats/messages=%d/%d/%d, bob=%d/%d/%d",
+			aliceConversations, aliceChats, aliceMessages, bobConversations, bobChats, bobMessages)
+	}
+}

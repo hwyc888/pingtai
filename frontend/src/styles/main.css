@@ -968,3 +968,49 @@ button:disabled { cursor: not-allowed; }
   .user-message-wrap { max-width: 86%; }
   .editing-message-bar { align-items: flex-start; font-size: 10px; }
 }
+
+/* Conversation clearing controls */
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.clear-current-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #e5e8f1;
+  border-radius: 9px;
+  color: #78819a;
+  font-size: 11px;
+  font-weight: 650;
+  background: rgba(255,255,255,.72);
+}
+.clear-current-button:hover:not(:disabled) {
+  border-color: #f0cbd0;
+  color: #bd4d5a;
+  background: #fff6f7;
+}
+.clear-current-button:disabled,
+.clear-history-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.clear-history-button {
+  width: 100%;
+  min-height: 38px;
+  margin-top: 8px;
+  border: 1px solid #f1dfe2;
+  border-radius: 10px;
+  color: #b45160;
+  font-size: 12px;
+  font-weight: 650;
+  background: #fff8f8;
+}
+.clear-history-button:hover:not(:disabled) {
+  border-color: #e9c5ca;
+  background: #fff0f1;
+}
+@media (max-width: 700px) {
+  .chat-header-actions { gap: 5px; }
+  .clear-current-button { min-height: 31px; padding: 0 8px; font-size: 10px; }
+}

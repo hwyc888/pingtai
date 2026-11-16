@@ -15,6 +15,7 @@ const username = ref(localStorage.getItem('username') || '用户')
 const isAdmin = ref(false)
 const models = ref([])
 const supportsMessageEdit = ref(false)
+const supportsLocalHistory = ref(false)
 const editingMessageId = ref('')
 const composerInput = ref(null)
 const knowledgeBases = ref([])
@@ -61,6 +62,7 @@ async function loadModels() {
   const data = assertSuccess(await api.get('/agents/models'))
   models.value = Array.isArray(data.models) ? data.models : []
   supportsMessageEdit.value = Boolean(data.supports_message_edit)
+  supportsLocalHistory.value = Boolean(data.supports_local_history ?? data.supports_message_edit)
   const defaultModel = data.default_model
   const preferred = models.value.find((item) => item.name === defaultModel) || models.value[0] || null
   if (!models.value.some((item) => item.bot_id === selectedBot.value?.bot_id)) {
@@ -322,6 +324,43 @@ async function deleteConversation(item) {
   }
 }
 
+async function clearCurrentConversation() {
+  if (!supportsLocalHistory.value || !conversationId.value || !messages.value.length || isSending.value) return
+  if (!window.confirm('确定清空当前页的全部消息吗？当前会话会保留，其他历史对话不会受影响。')) return
+  try {
+    assertSuccess(await api.post('/agents/clearConversation', { conversation_id: conversationId.value }))
+    messages.value = []
+    editingMessageId.value = ''
+    draft.value = ''
+    attachment.value = null
+    conversations.value = conversations.value.filter((item) => item.id !== conversationId.value)
+    pageError.value = ''
+    historyError.value = ''
+    scrollToBottom()
+  } catch (error) {
+    pageError.value = error?.message || '清空当前页失败'
+  }
+}
+
+async function clearAllHistory() {
+  if (!supportsLocalHistory.value || isSending.value) return
+  if (!window.confirm('确定清空当前账号的全部历史对话吗？包括当前页在内的所有会话和消息都会被永久删除，且无法恢复。')) return
+  try {
+    assertSuccess(await api.post('/agents/clearConversations', {}))
+    conversations.value = []
+    conversationId.value = ''
+    messages.value = []
+    editingMessageId.value = ''
+    draft.value = ''
+    attachment.value = null
+    pageError.value = ''
+    historyError.value = ''
+    scrollToBottom()
+  } catch (error) {
+    historyError.value = error?.message || '清空历史对话失败'
+  }
+}
+
 async function sendMessage(text = draft.value, options = {}) {
   const content = String(text || '').trim()
   if (!content || isSending.value) return
@@ -556,7 +595,10 @@ onBeforeUnmount(() => {
         <BrandMark class="header-mark" />
         <span>{{ copy.appName }}</span>
       </div>
-      <button class="icon-button new-chat-button" type="button" :aria-label="copy.startNewChat" :disabled="isSending" @click="startNewConversation">+</button>
+      <div class="chat-header-actions">
+        <button v-if="supportsLocalHistory && messages.length" class="clear-current-button" type="button" :disabled="isSending" @click="clearCurrentConversation">清空当前页</button>
+        <button class="icon-button new-chat-button" type="button" :aria-label="copy.startNewChat" :disabled="isSending" @click="startNewConversation">+</button>
+      </div>
     </header>
 
     <section ref="messageList" class="message-list" aria-live="polite">
@@ -663,6 +705,7 @@ onBeforeUnmount(() => {
     <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
       <aside class="history-drawer" :aria-label="copy.history">
         <button class="start-chat-button" type="button" :disabled="isSending" @click="startNewConversation">+ {{ copy.startNewChat }}</button>
+        <button v-if="supportsLocalHistory && conversations.length" class="clear-history-button" type="button" :disabled="isSending" @click="clearAllHistory">清空全部历史对话</button>
         <div class="history-list">
           <div v-if="historyLoading" class="history-status">{{ copy.loading }}</div>
           <div v-else-if="historyError" class="history-status history-error">{{ historyError }}</div>

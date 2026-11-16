@@ -16,6 +16,7 @@ func (h *Handler) ListChatModels(w http.ResponseWriter, r *http.Request) {
 				"default_model": "",
 				"configured": false,
 				"supports_message_edit": h.Config.UsesLocalConversations(),
+				"supports_local_history": h.Config.UsesLocalConversations(),
 			},
 		})
 		return
@@ -41,6 +42,7 @@ func (h *Handler) ListChatModels(w http.ResponseWriter, r *http.Request) {
 			"default_model": defaultModel,
 			"configured": len(items) > 0,
 			"supports_message_edit": h.Config.UsesLocalConversations(),
+				"supports_local_history": h.Config.UsesLocalConversations(),
 		},
 	})
 }
