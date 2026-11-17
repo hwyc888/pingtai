@@ -1,2 +1,6 @@
--- Persist safe attachment reference metadata without storing uploaded file bytes.
-ALTER TABLE ai_message ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]';
+-- Idempotent file-reference metadata table; attached file bytes remain in model context.
+CREATE TABLE IF NOT EXISTS ai_message_attachment (
+  message_id INTEGER NOT NULL PRIMARY KEY,
+  attachments_json TEXT NOT NULL DEFAULT '[]',
+  FOREIGN KEY(message_id) REFERENCES ai_message(id) ON DELETE CASCADE
+);

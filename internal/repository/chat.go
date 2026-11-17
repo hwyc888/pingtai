@@ -92,7 +92,10 @@ func (r *ChatRepository) SaveMessageAttachments(ctx context.Context, messageID i
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(ctx, "UPDATE ai_message SET attachments_json=? WHERE id=? AND role='user'", string(encoded), messageID)
+	_, err = r.db.ExecContext(ctx,
+		"INSERT INTO ai_message_attachment (message_id,attachments_json) VALUES (?,?) "+
+			"ON CONFLICT(message_id) DO UPDATE SET attachments_json=excluded.attachments_json",
+		messageID, string(encoded))
 	return err
 }
 
@@ -185,7 +188,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, conversationID string
 	if order == "asc" {
 		direction = "ASC"
 	}
-	query := "SELECT id,conversation_id,chat_id,role,content,COALESCE(reasoning_content,''),created_at,COALESCE(attachments_json,'[]') " +
+	query := "SELECT id,conversation_id,chat_id,role,content,COALESCE(reasoning_content,''),created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=id),'[]') " +
 		"FROM ai_message WHERE conversation_id=? ORDER BY id " + direction + " LIMIT ?"
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit)
 	if err != nil {
@@ -205,7 +208,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, conversationID string
 }
 
 func (r *ChatRepository) MessagesByChat(ctx context.Context, chatID, conversationID, userID string) ([]model.Message, error) {
-	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE(m.attachments_json,'[]') " +
+	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]') " +
 		"FROM ai_message m INNER JOIN ai_conversation v ON v.id=m.conversation_id " +
 		"WHERE m.chat_id=? AND m.conversation_id=? AND v.user_id=? ORDER BY m.id ASC"
 	rows, err := r.db.QueryContext(ctx, query, chatID, conversationID, userID)
@@ -226,7 +229,7 @@ func (r *ChatRepository) MessagesByChat(ctx context.Context, chatID, conversatio
 }
 
 func (r *ChatRepository) FindMessage(ctx context.Context, id int64, conversationID, userID string) (model.Message, error) {
-	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE(m.attachments_json,'[]') " +
+	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]') " +
 		"FROM ai_message m INNER JOIN ai_conversation v ON v.id=m.conversation_id " +
 		"WHERE m.id=? AND m.conversation_id=? AND v.user_id=? LIMIT 1"
 	return scanMessageWithAttachments(r.db.QueryRowContext(ctx, query, id, conversationID, userID))
