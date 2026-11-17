@@ -50,7 +50,12 @@ const composerExpanded = computed(() =>
 const selectedKnowledgeBase = computed(() =>
   knowledgeBases.value.find((item) => item.id === selectedKnowledgeBaseId.value) || null
 )
-const knowledgeMentionActive = computed(() => draft.value.includes('@知识库'))
+const knowledgeMentionSelected = ref(false)
+const showMentionMenu = ref(false)
+const mentionQuery = ref('')
+const mentionStart = ref(-1)
+const mentionEnd = ref(-1)
+const knowledgeMentionActive = computed(() => knowledgeMentionSelected.value && draft.value.includes('@知识库'))
 const showKnowledgeContext = computed(() => knowledgeMentionActive.value && knowledgeBases.value.length > 0)
 
 function fileReference(file) {
@@ -384,7 +389,8 @@ async function clearAllHistory() {
 
 async function sendMessage(text = draft.value, options = {}) {
   const rawContent = String(text || '')
-  const knowledgeMentionRequested = rawContent.includes('@知识库') && knowledgeBases.value.length > 0
+  const knowledgeMentionRequested = knowledgeMentionSelected.value &&
+    rawContent.includes('@知识库') && knowledgeBases.value.length > 0
   const contentWithoutMention = knowledgeMentionRequested
     ? rawContent.replace(/@知识库/g, ' ')
     : rawContent
@@ -535,11 +541,91 @@ function resizeComposer() {
   input.style.height = Math.min(input.scrollHeight, 160) + 'px'
 }
 
-watch(draft, (value, previousValue) => {
-  const hasKnowledgeMention = value.includes('@知识库')
-  const hadKnowledgeMention = previousValue.includes('@知识库')
-  if (hasKnowledgeMention && !hadKnowledgeMention) knowledgeEnabled.value = true
-  if (!hasKnowledgeMention) knowledgeEnabled.value = false
+function updateMentionMenu() {
+  const input = composerInput.value
+  if (!input || isSending.value) {
+    showMentionMenu.value = false
+    return
+  }
+
+  const caret = input.selectionStart ?? draft.value.length
+  const beforeCaret = draft.value.slice(0, caret)
+  const match = beforeCaret.match(/@([^\\s@]*)$/)
+  if (!match) {
+    showMentionMenu.value = false
+    return
+  }
+
+  const start = caret - match[0].length
+  const previousCharacter = beforeCaret[start - 1] || ''
+  if (previousCharacter && /[A-Za-z0-9._%+-]/.test(previousCharacter)) {
+    showMentionMenu.value = false
+    return
+  }
+
+  const query = match[1]
+  const normalizedQuery = query.toLocaleLowerCase()
+  const matchesKnowledge = !normalizedQuery ||
+    '知识库'.startsWith(normalizedQuery) ||
+    'knowledge'.startsWith(normalizedQuery) ||
+    'kb'.startsWith(normalizedQuery)
+
+  if (!matchesKnowledge) {
+    showMentionMenu.value = false
+    return
+  }
+
+  mentionQuery.value = query
+  mentionStart.value = start
+  mentionEnd.value = caret
+  showMentionMenu.value = true
+}
+
+function handleComposerInput() {
+  resizeComposer()
+  updateMentionMenu()
+}
+
+function closeMentionMenu() {
+  showMentionMenu.value = false
+}
+
+function selectKnowledgeMention() {
+  if (isSending.value) return
+  if (!knowledgeBases.value.length) {
+    showMentionMenu.value = false
+    pageError.value = '当前账号暂无可用知识库，请先创建知识库或联系管理员授权。'
+    return
+  }
+
+  const start = mentionStart.value
+  const end = mentionEnd.value
+  if (start < 0 || end < start) {
+    showMentionMenu.value = false
+    return
+  }
+
+  const mentionText = '@知识库 '
+  draft.value = draft.value.slice(0, start) + mentionText + draft.value.slice(end)
+  knowledgeMentionSelected.value = true
+  knowledgeEnabled.value = true
+  showMentionMenu.value = false
+
+  const nextCaret = start + mentionText.length
+  nextTick(() => {
+    const input = composerInput.value
+    if (!input) return
+    input.focus()
+    input.setSelectionRange(nextCaret, nextCaret)
+    resizeComposer()
+  })
+}
+
+watch(draft, (value) => {
+  if (!value.includes('@知识库')) {
+    knowledgeMentionSelected.value = false
+    knowledgeEnabled.value = false
+  }
   nextTick(resizeComposer)
 }, { flush: 'sync' })
 
@@ -582,6 +668,23 @@ function removeAttachment(index) {
 }
 
 function handleComposerKeydown(event) {
+  if (showMentionMenu.value) {
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault()
+      selectKnowledgeMention()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMentionMenu()
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      return
+    }
+  }
+
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
@@ -724,6 +827,34 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
+      <Transition name="mention-suggestion">
+        <div
+          v-if="showMentionMenu"
+          id="mention-suggestion-menu"
+          class="mention-suggestion-menu"
+          role="listbox"
+          aria-label="提及功能"
+        >
+          <div class="mention-suggestion-heading">提及</div>
+          <button
+            class="mention-suggestion-option"
+            type="button"
+            role="option"
+            :aria-selected="true"
+            :disabled="!knowledgeBases.length"
+            @mousedown.prevent
+            @click="selectKnowledgeMention"
+          >
+            <span class="mention-suggestion-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" /></span>
+            <span class="mention-suggestion-copy">
+              <strong>知识库</strong>
+              <small>{{ knowledgeBases.length ? '引用已授权知识库内容' : '当前没有可用知识库' }}</small>
+            </span>
+            <kbd>{{ knowledgeBases.length ? 'Enter' : '不可用' }}</kbd>
+          </button>
+        </div>
+      </Transition>
+
       <Transition name="knowledge-context">
         <div v-if="showKnowledgeContext" class="composer-context-toolbar" aria-label="对话上下文设置">
         <div class="composer-context-main">
@@ -802,8 +933,12 @@ onBeforeUnmount(() => {
             :placeholder="attachments.length ? '询问附件内容…' : '发送消息开始提问…'"
             :disabled="isSending"
             :aria-label="copy.sendPlaceholder"
+            :aria-expanded="showMentionMenu"
+            aria-controls="mention-suggestion-menu"
             @keydown="handleComposerKeydown"
-            @input="resizeComposer"
+            @input="handleComposerInput"
+            @click="updateMentionMenu"
+            @blur="closeMentionMenu"
           ></textarea>
 
           <div v-if="models.length" class="footer-toolbar composer-model-toolbar">
