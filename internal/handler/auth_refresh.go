@@ -9,12 +9,12 @@ import (
 )
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	identity, ok := currentIdentity(r)
+	identity, ok := h.identityForRequest(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "Invalid token"})
 		return
 	}
-	if h.Config.SSOConfigured() {
+	if identity.Provider == "sso" {
 		providerCookie, cookieErr := r.Cookie("SSORefreshToken")
 		if cookieErr != nil {
 			clearAuthCookies(w, h.requestSecure(r))
@@ -41,7 +41,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-	token, err := h.Auth.IssueAccessWithName(identity.Username, identity.DisplayName)
+	token, err := h.Auth.IssueAccessForIdentity(identity.Username, identity.DisplayName, identity.UserID, identity.Provider)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"errcode": 500, "errmsg": "生成访问令牌失败"})
 		return

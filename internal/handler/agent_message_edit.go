@@ -24,8 +24,8 @@ func (h *Handler) PrepareMessageEdit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "当前 Coze 会话模式暂不支持编辑历史消息")
 		return
 	}
-	identity, _ := currentIdentity(r)
-	err = h.Chats.PrepareMessageEdit(r.Context(), messageID, conversationID, identity.Username)
+	identity, _ := h.identityForRequest(r)
+	err = h.Chats.PrepareMessageEdit(r.Context(), messageID, conversationID, identity.UserID)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "消息不存在或无权编辑")
 		return

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"pingtai/internal/config"
+	"pingtai/internal/database"
+	"pingtai/internal/repository"
 	authservice "pingtai/internal/service/auth"
 )
 
@@ -51,8 +54,17 @@ func TestSSOCallbackExchangesCodeAndCreatesHttpOnlySessionCookies(t *testing.T) 
 	cfg.JWTSecret = strings.Repeat("secret", 8)
 	cfg.AccessTokenTTL = 30 * time.Minute
 	cfg.RefreshTokenTTL = time.Hour
-	auth := authservice.NewService(nil, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
-	app := &Handler{Config: &cfg, Auth: auth}
+	db, err := database.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	users := repository.NewUserRepository(db)
+	auth := authservice.NewService(users, cfg.JWTSecret, cfg.AccessTokenTTL, cfg.RefreshTokenTTL)
+	app := &Handler{Config: &cfg, DB: db, Users: users, Auth: auth}
 
 	request := httptest.NewRequest(http.MethodGet, "https://platform.example/auth/sso/callback?code=one-time-code&state=state-123", nil)
 	request.AddCookie(&http.Cookie{Name: ssoStateCookie, Value: "state-123"})
@@ -83,7 +95,7 @@ func TestSSOCallbackExchangesCodeAndCreatesHttpOnlySessionCookies(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.Subject != "staff-01" || claims.Name != "测试用户" || claims.Type != "access" {
+	if claims.Subject != "staff-01" || claims.Name != "测试用户" || claims.Type != "access" || claims.UserID == "" || claims.Provider != "sso" {
 		t.Fatalf("unexpected application token claims: %#v", claims)
 	}
 	if values["SSORefreshToken"].Value != "school-refresh" {

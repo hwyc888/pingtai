@@ -17,6 +17,8 @@ import (
 type Claims struct {
 	Subject   string `json:"sub"`
 	Name      string `json:"name,omitempty"`
+	UserID    string `json:"uid,omitempty"`
+	Provider  string `json:"provider,omitempty"`
 	Type      string `json:"type"`
 	JTI       string `json:"jti"`
 	Issued    int64  `json:"iat"`
@@ -50,11 +52,15 @@ func (m *TokenManager) IssuePair(subject string) (TokenPair, error) {
 }
 
 func (m *TokenManager) IssuePairWithName(subject, name string) (TokenPair, error) {
-	access, err := m.issue(subject, name, "access", m.accessTTL, true)
+	return m.IssuePairForIdentity(subject, name, "", "")
+}
+
+func (m *TokenManager) IssuePairForIdentity(subject, name, userID, provider string) (TokenPair, error) {
+	access, err := m.issue(subject, name, userID, provider, "access", m.accessTTL, true)
 	if err != nil {
 		return TokenPair{}, err
 	}
-	refresh, err := m.issue(subject, name, "refresh", m.refreshTTL, false)
+	refresh, err := m.issue(subject, name, userID, provider, "refresh", m.refreshTTL, false)
 	if err != nil {
 		return TokenPair{}, err
 	}
@@ -66,10 +72,14 @@ func (m *TokenManager) IssueAccess(subject string) (string, error) {
 }
 
 func (m *TokenManager) IssueAccessWithName(subject, name string) (string, error) {
-	return m.issue(subject, name, "access", m.accessTTL, true)
+	return m.IssueAccessForIdentity(subject, name, "", "")
 }
 
-func (m *TokenManager) issue(subject, name, tokenType string, ttl time.Duration, fresh bool) (string, error) {
+func (m *TokenManager) IssueAccessForIdentity(subject, name, userID, provider string) (string, error) {
+	return m.issue(subject, name, userID, provider, "access", m.accessTTL, true)
+}
+
+func (m *TokenManager) issue(subject, name, userID, provider, tokenType string, ttl time.Duration, fresh bool) (string, error) {
 	if subject == "" || len(m.secret) == 0 {
 		return "", errors.New("token subject and signing secret are required")
 	}
@@ -80,7 +90,7 @@ func (m *TokenManager) issue(subject, name, tokenType string, ttl time.Duration,
 	}
 	header, _ := json.Marshal(map[string]string{"alg": "HS256", "typ": "JWT"})
 	claims := Claims{
-		Subject: subject, Name: name, Type: tokenType, JTI: jti,
+		Subject: subject, Name: name, UserID: userID, Provider: provider, Type: tokenType, JTI: jti,
 		Issued: now.Unix(), NotBefore: now.Unix(),
 		Expires: now.Add(ttl).Unix(), Fresh: fresh,
 	}

@@ -68,7 +68,17 @@ func (h *Handler) RegisterFirstAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "创建管理员失败，账号可能已存在")
 		return
 	}
-	pair, err := h.Auth.IssuePair(username)
+	user, findErr := h.Users.FindByUsername(r.Context(), username)
+	if findErr != nil {
+		writeError(w, http.StatusInternalServerError, "读取管理员账户失败")
+		return
+	}
+	stableIdentity, identityErr := h.Users.EnsureLocalIdentity(r.Context(), user)
+	if identityErr != nil {
+		writeError(w, http.StatusInternalServerError, "初始化管理员身份失败")
+		return
+	}
+	pair, err := h.Auth.IssuePairForIdentity(username, "", stableIdentity.ID, "local")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "管理员已创建，请使用刚设置的账号密码登录")
 		return

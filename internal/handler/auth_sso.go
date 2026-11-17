@@ -87,7 +87,12 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
 	}
-	pair, err := h.Auth.IssuePairWithName(profile.Account, profile.DisplayName)
+	stableIdentity, err := h.Users.EnsureExternalIdentity(ctx, "sso", profile.Account, profile.Account, profile.DisplayName)
+	if err != nil {
+		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		return
+	}
+	pair, err := h.Auth.IssuePairForIdentity(profile.Account, profile.DisplayName, stableIdentity.ID, "sso")
 	if err != nil {
 		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
@@ -114,7 +119,7 @@ func (h *Handler) SSOLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
-	identity, ok := currentIdentity(r)
+	identity, ok := h.identityForRequest(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "登录状态已失效"})
 		return
@@ -132,6 +137,8 @@ func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 		"data": map[string]any{
 			"account": identity.Username,
 			"display_name": displayName,
+			"user_id": identity.UserID,
+			"auth_provider": identity.Provider,
 			"auth_method": authMethod,
 			"is_admin": h.isAdministrator(r, identity.Username),
 		},
@@ -140,8 +147,9 @@ func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 
 
 func (h *Handler) isAdministrator(r *http.Request, account string) bool {
-	if h.Config.SSOConfigured() {
-		return h.Config.IsSSOAdmin(account)
+	identity, ok := h.identityForRequest(r)
+	if ok && identity.Provider == "sso" {
+		return h.Config.IsSSOAdmin(identity.Username)
 	}
 	if h.Users == nil {
 		return false
@@ -249,6 +257,6 @@ func (h *Handler) ssoIdentityFromRequest(r *http.Request) (middleware.Identity, 
 		return middleware.Identity{}, false
 	}
 	return middleware.Identity{
-		Username: claims.Subject, DisplayName: claims.Name, JTI: claims.JTI, Expires: claims.Expires,
+		Username: claims.Subject, DisplayName: claims.Name, UserID: claims.UserID, Provider: requestIdentityProvider(r, claims.Provider), JTI: claims.JTI, Expires: claims.Expires,
 	}, true
 }

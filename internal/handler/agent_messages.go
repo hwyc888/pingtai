@@ -21,8 +21,8 @@ func (h *Handler) CreateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
-		if _, err := h.Chats.FindConversation(r.Context(), conversationID, identity.Username); err != nil {
+		identity, _ := h.identityForRequest(r)
+		if _, err := h.Chats.FindConversation(r.Context(), conversationID, identity.UserID); err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "会话不存在"})
 			return
 		}
@@ -58,8 +58,8 @@ func (h *Handler) GetMessageList(w http.ResponseWriter, r *http.Request) {
 		limit = 100
 	}
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
-		if _, err := h.Chats.FindConversation(r.Context(), conversationID, identity.Username); err != nil {
+		identity, _ := h.identityForRequest(r)
+		if _, err := h.Chats.FindConversation(r.Context(), conversationID, identity.UserID); err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "会话不存在"})
 			return
 		}
@@ -88,13 +88,13 @@ func (h *Handler) GetMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
+		identity, _ := h.identityForRequest(r)
 		id, err := strconv.ParseInt(messageID, 10, 64)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 500, "msg": "消息ID格式错误"})
 			return
 		}
-		item, err := h.Chats.FindMessage(r.Context(), id, conversationID, identity.Username)
+		item, err := h.Chats.FindMessage(r.Context(), id, conversationID, identity.UserID)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "消息不存在"})
 			return

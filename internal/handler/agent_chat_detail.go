@@ -18,8 +18,8 @@ func (h *Handler) GetChatDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
-		item, err := h.Chats.FindChat(r.Context(), chatID, conversationID, identity.Username)
+		identity, _ := h.identityForRequest(r)
+		item, err := h.Chats.FindChat(r.Context(), chatID, conversationID, identity.UserID)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "聊天记录不存在"})
 			return

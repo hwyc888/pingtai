@@ -26,9 +26,11 @@ const newName = ref('')
 const newDescription = ref('')
 const newAccessMode = ref('shared')
 const newOwnerUsername = ref('')
+const newOwnerProvider = ref('local')
 const newMemberUsernames = ref('')
 const editAccessMode = ref('private')
 const editOwnerUsername = ref('')
+const editOwnerProvider = ref('local')
 const editMemberUsernames = ref('')
 const editName = ref('')
 const editDescription = ref('')
@@ -39,6 +41,18 @@ const versionTitle = ref('')
 const versionDescription = ref('')
 
 const selectedBase = computed(() => bases.value.find((item) => item.id === selectedBaseId.value) || null)
+const ownerFilter = ref('')
+const ownerProviderFilter = ref('all')
+const filteredBases = computed(() => {
+  const query = ownerFilter.value.trim().toLowerCase()
+  return bases.value.filter((base) => {
+    const owner = String(base.owner_username || '').toLowerCase()
+    const name = String(base.name || '').toLowerCase()
+    const providerMatches = ownerProviderFilter.value === 'all' || base.owner_provider === ownerProviderFilter.value
+    const textMatches = !query || owner.includes(query) || name.includes(query) || String(base.owner_display_name || '').toLowerCase().includes(query)
+    return providerMatches && textMatches
+  })
+})
 
 function assertSuccess(result) {
   const code = Number(result?.code)
@@ -86,6 +100,7 @@ async function loadSelectedBase() {
   editEnabled.value = Boolean(base.enabled)
   editAccessMode.value = base.access_mode || 'private'
   editOwnerUsername.value = base.owner_username || ''
+  editOwnerProvider.value = base.owner_provider || 'local'
   editMemberUsernames.value = Array.isArray(base.member_usernames) ? base.member_usernames.join(', ') : ''
   const [documentData, versionData] = await Promise.all([
     api.get('/knowledge/manage/documents', { base_id: base.id }),
@@ -201,7 +216,10 @@ async function createBase() {
     const payload = { name: newName.value.trim(), description: newDescription.value.trim() }
     if (canConfigurePermissions.value) {
       payload.access_mode = newAccessMode.value
-      payload.owner_username = newOwnerUsername.value.trim()
+      if (newOwnerUsername.value.trim()) {
+        payload.owner_username = newOwnerUsername.value.trim()
+        payload.owner_provider = newOwnerProvider.value
+      }
       payload.member_usernames = newMemberUsernames.value.trim()
     }
     const data = assertSuccess(await api.post('/knowledge/manage/bases/create', payload))
@@ -209,6 +227,7 @@ async function createBase() {
     newDescription.value = ''
     newAccessMode.value = 'shared'
     newOwnerUsername.value = ''
+    newOwnerProvider.value = 'local'
     newMemberUsernames.value = ''
     await loadBases()
     if (data.id) await selectBase(data.id)
@@ -234,6 +253,7 @@ async function saveBaseSettings() {
     if (canConfigurePermissions.value) {
       payload.access_mode = editAccessMode.value
       payload.owner_username = editOwnerUsername.value.trim()
+      payload.owner_provider = editOwnerProvider.value
       payload.member_usernames = editMemberUsernames.value.trim()
     }
     assertSuccess(await api.post('/knowledge/manage/bases/update', payload))
@@ -388,10 +408,16 @@ onMounted(async () => {
           </select>
         </label>
         <label v-if="canConfigurePermissions">归属账号
-          <input v-model="newOwnerUsername" maxlength="100" placeholder="留空则归当前管理员" />
+          <input v-model="newOwnerUsername" maxlength="100" placeholder="留空则归当前登录账号" />
+        </label>
+        <label v-if="canConfigurePermissions">归属账号来源
+          <select v-model="newOwnerProvider">
+            <option value="local">平台账号</option>
+            <option value="sso">学校 SSO</option>
+          </select>
         </label>
         <label v-if="canConfigurePermissions && newAccessMode === 'assigned'">授权账号
-          <textarea v-model="newMemberUsernames" rows="1" placeholder="多个账号用逗号分隔" required></textarea>
+          <textarea v-model="newMemberUsernames" rows="1" placeholder="多个平台账号用逗号分隔；学校 SSO 账号写成 sso:账号" required></textarea>
         </label>
         <button class="admin-primary" type="submit" :disabled="saving">创建知识库</button>
       </form>
@@ -407,13 +433,23 @@ onMounted(async () => {
           <div><h2 class="knowledge-heading-with-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" />知识库列表</h2><p>{{ bases.length }} 个知识库</p></div>
           <button class="admin-secondary" type="button" :disabled="saving" @click="loadBases">刷新</button>
         </div>
-        <button v-for="base in bases" :key="base.id" type="button"
+        <div v-if="canConfigurePermissions" class="knowledge-owner-filter">
+          <input v-model="ownerFilter" type="search" placeholder="按知识库名称或归属账号筛选" aria-label="筛选知识库" />
+          <select v-model="ownerProviderFilter" aria-label="筛选账号来源">
+            <option value="all">全部来源</option>
+            <option value="local">平台账号</option>
+            <option value="sso">学校 SSO</option>
+          </select>
+        </div>
+        <button v-for="base in filteredBases" :key="base.id" type="button"
           class="knowledge-list-item" :class="{ active: base.id === selectedBaseId }"
           @click="selectBase(base.id)">
           <span class="knowledge-list-item-title"><img src="/zhishiku.png" alt="" aria-hidden="true" /><strong>{{ base.name }}</strong></span>
+          <small class="knowledge-owner-badge">归属：{{ base.owner_username || '未知' }} · {{ base.owner_provider === 'sso' ? '学校 SSO' : '平台账号' }}</small>
           <small>{{ base.document_count }} 份文档 · {{ accessModeLabel(base.access_mode) }} · {{ base.enabled ? '已启用' : '已停用' }}</small>
         </button>
         <p v-if="!bases.length" class="admin-empty">还没有知识库，请先创建。</p>
+        <p v-else-if="!filteredBases.length" class="admin-empty">没有匹配的知识库，请调整筛选条件。</p>
       </aside>
 
       <section class="knowledge-content admin-card">
@@ -422,7 +458,7 @@ onMounted(async () => {
             <div>
               <h2 class="knowledge-heading-with-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" />{{ selectedBase.name }}</h2>
               <p>{{ selectedBase.description || '尚未填写知识库说明' }}</p>
-              <p class="knowledge-owner-line">归属：{{ selectedBase.owner_username || '未知' }} · {{ accessModeLabel(selectedBase.access_mode) }}<template v-if="canConfigurePermissions && selectedBase.access_mode === 'assigned'"> · 授权：{{ (selectedBase.member_usernames || []).join('、') || '暂无' }}</template></p>
+              <p class="knowledge-owner-line">归属：{{ selectedBase.owner_username || '未知' }}（{{ selectedBase.owner_provider === 'sso' ? '学校 SSO' : '平台账号' }}） · {{ accessModeLabel(selectedBase.access_mode) }}<template v-if="canConfigurePermissions && selectedBase.access_mode === 'assigned'"> · 授权：{{ (selectedBase.member_usernames || []).join('、') || '暂无' }}</template></p>
             </div>
             <span class="admin-mode">{{ selectedBase.enabled ? '对话可用' : '已停用' }}</span>
           </div>
@@ -440,6 +476,12 @@ onMounted(async () => {
             </label>
             <label v-if="canConfigurePermissions">归属账号
               <input v-model="editOwnerUsername" maxlength="100" placeholder="填写登录账号" required />
+            </label>
+            <label v-if="canConfigurePermissions">归属账号来源
+              <select v-model="editOwnerProvider">
+                <option value="local">平台账号</option>
+                <option value="sso">学校 SSO</option>
+              </select>
             </label>
             <label v-if="canConfigurePermissions && editAccessMode === 'assigned'">授权账号
               <textarea v-model="editMemberUsernames" rows="2" placeholder="多个账号用逗号分隔" required></textarea>

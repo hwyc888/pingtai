@@ -39,10 +39,10 @@ func (h *Handler) chatCoze(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 500, "msg": "缺少会话ID、智能体ID或消息内容"})
 		return
 	}
-	identity, _ := currentIdentity(r)
+	identity, _ := h.identityForRequest(r)
 	stream := r.FormValue("stream") == "1"
 	payload := map[string]any{
-		"bot_id": botID, "user_id": identity.Username,
+		"bot_id": botID, "user_id": identity.UserID,
 		"stream": stream, "auto_save_history": true,
 	}
 	files := requestChatFiles(r)
@@ -167,13 +167,13 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 400, "msg": "所选模型已停用或不存在，请刷新模型列表后重试"})
 		return
 	}
-	identity, _ := currentIdentity(r)
-	_, err := h.Chats.FindConversation(r.Context(), conversationID, identity.Username)
+	identity, _ := h.identityForRequest(r)
+	_, err := h.Chats.FindConversation(r.Context(), conversationID, identity.UserID)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "会话不存在"})
 		return
 	}
-	_ = h.Chats.UpdateConversationBot(r.Context(), conversationID, identity.Username, botID)
+	_ = h.Chats.UpdateConversationBot(r.Context(), conversationID, identity.UserID, botID)
 
 	userContent, storedContent, err := h.buildModelUserContent(r, content)
 	if err != nil {
@@ -188,7 +188,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 
 	systemPrompt := activeConfig.SystemPrompt()
 	if knowledgeBaseID := strings.TrimSpace(r.FormValue("knowledge_base_id")); knowledgeBaseID != "" {
-		knowledgeContext, knowledgeErr := h.knowledgePrompt(r.Context(), identity.Username, knowledgeBaseID, content)
+		knowledgeContext, knowledgeErr := h.knowledgePrompt(r.Context(), identity, knowledgeBaseID, content)
 		if knowledgeErr != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"code": http.StatusBadRequest, "msg": knowledgeErr.Error()})
 			return

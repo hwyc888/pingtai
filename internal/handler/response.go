@@ -45,6 +45,50 @@ func (h *Handler) parseForm(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+func (h *Handler) identityForRequest(r *http.Request) (middleware.Identity, bool) {
+	identity, ok := currentIdentity(r)
+	if !ok || strings.TrimSpace(identity.Username) == "" {
+		return middleware.Identity{}, false
+	}
+	if identity.UserID != "" {
+		return identity, true
+	}
+	if identity.APIKey {
+		identity.UserID = "api-client"
+		identity.Provider = "api"
+		return identity, true
+	}
+	if h.Users == nil {
+		return middleware.Identity{}, false
+	}
+	provider := identity.Provider
+	if provider == "" {
+		provider = "local"
+	}
+	var stableID string
+	if provider == "sso" {
+		external, err := h.Users.EnsureExternalIdentity(r.Context(), "sso", identity.Username, identity.Username, identity.DisplayName)
+		if err != nil {
+			return middleware.Identity{}, false
+		}
+		stableID = external.ID
+	} else {
+		user, err := h.Users.FindByUsername(r.Context(), identity.Username)
+		if err != nil {
+			return middleware.Identity{}, false
+		}
+		local, err := h.Users.EnsureLocalIdentity(r.Context(), user)
+		if err != nil {
+			return middleware.Identity{}, false
+		}
+		stableID = local.ID
+		provider = "local"
+	}
+	identity.UserID = stableID
+	identity.Provider = provider
+	return identity, true
+}
+
 func currentIdentity(r *http.Request) (middleware.Identity, bool) {
 	return middleware.IdentityFromContext(r.Context())
 }

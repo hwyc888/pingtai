@@ -669,23 +669,6 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div v-if="models.length || knowledgeBases.length" class="footer-toolbar">
-        <label v-if="models.length" class="model-select-label">
-          <span>模型</span>
-          <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
-            <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
-          </select>
-        </label>
-        <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
-        <label class="knowledge-toggle">
-          <input v-model="knowledgeEnabled" type="checkbox" :disabled="!knowledgeBases.length || isSending" />
-          <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
-          <span>使用知识库</span>
-        </label>
-        <select v-if="knowledgeBases.length" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="!knowledgeEnabled || isSending">
-          <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }}</option>
-        </select>
-      </div>
       <div class="composer-shell">
         <div v-if="editingMessageId" class="editing-message-bar">
           <span>正在编辑已发送的问题，重新发送后该消息之后的回答将被替换</span>
@@ -699,6 +682,10 @@ onBeforeUnmount(() => {
             <button type="button" :aria-label="copy.removeFile" :disabled="isSending" @click="removeAttachment(index)">&times;</button>
           </div>
         </div>
+        <div v-if="attachments.length" class="attachment-suggestions">
+          <button type="button" :disabled="isSending" @click="draft = '请详细总结附件内容，并提炼核心要点。'">详细总结文档内容 <span>→</span></button>
+          <button type="button" :disabled="isSending" @click="draft = '请用通俗易懂的话说明附件主要讲了什么。'">用通俗的话解释文档 <span>→</span></button>
+        </div>
         <textarea
           ref="composerInput"
           v-model="draft"
@@ -710,10 +697,29 @@ onBeforeUnmount(() => {
           @input="resizeComposer"
         ></textarea>
         <div class="composer-actions">
-          <label class="attach-button" :title="copy.attach">
-            <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
-            <span aria-hidden="true">+</span>
-          </label>
+          <div class="composer-tool-group">
+            <label class="attach-button" :title="copy.attach">
+              <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
+              <span aria-hidden="true">+</span>
+            </label>
+            <div v-if="models.length || knowledgeBases.length" class="footer-toolbar">
+              <label v-if="models.length" class="model-select-label">
+                <span>模型</span>
+                <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
+                  <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
+                </select>
+              </label>
+              <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
+              <label class="knowledge-toggle">
+                <input v-model="knowledgeEnabled" type="checkbox" :disabled="!knowledgeBases.length || isSending" />
+                <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
+                <span>使用知识库</span>
+              </label>
+              <select v-if="knowledgeBases.length" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="!knowledgeEnabled || isSending">
+                <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }} · {{ base.owner_username }}</option>
+              </select>
+            </div>
+          </div>
           <button v-if="isSending" class="stop-button" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><span></span>停止</button>
           <button v-else class="send-button" type="button" :disabled="!canSend" :aria-label="copy.send" @click="sendMessage()">&#8593;</button>
         </div>
