@@ -48,8 +48,8 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 				writeHealth(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "登录状态已失效"})
 				return
 			}
-			isAdmin := h.Config.SSOConfigured() && h.Config.IsSSOAdmin(identity.Username)
-			if !isAdmin && h.Users != nil {
+			isAdmin := identity.Provider == "sso" && h.Config.SSOConfigured() && h.Config.IsSSOAdmin(identity.Username)
+			if identity.Provider != "sso" && !isAdmin && h.Users != nil {
 				user, err := h.Users.FindByUsername(r.Context(), identity.Username)
 				isAdmin = err == nil && user.UserType == 1 && user.Status == 1 && user.DelTag == 0
 			}

@@ -32,7 +32,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"errcode": 500, "errmsg": "登录失败"})
 		return
 	}
-	pair, err := h.Auth.IssuePair(user.Username)
+	stableIdentity, err := h.Users.EnsureLocalIdentity(r.Context(), user)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"errcode": 500, "errmsg": "初始化账户身份失败"})
+		return
+	}
+	pair, err := h.Auth.IssuePairForIdentity(user.Username, "", stableIdentity.ID, "local")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"errcode": 500, "errmsg": "生成登录令牌失败"})
 		return

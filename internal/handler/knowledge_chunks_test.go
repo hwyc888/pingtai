@@ -28,10 +28,21 @@ func TestKnowledgeChunkManagementViewEditAndAdd(t *testing.T) {
 	}
 
 	users := repository.NewUserRepository(db)
+	identityIDs := make(map[string]string)
 	for _, username := range []string{"alice", "bob"} {
-		if _, err := users.Create(ctx, username, "test-password", 0); err != nil {
+		id, err := users.Create(ctx, username, "test-password", 0)
+		if err != nil {
 			t.Fatal(err)
 		}
+		user, err := users.FindByID(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identity, err := users.EnsureLocalIdentity(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identityIDs[username] = identity.ID
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -49,8 +60,20 @@ func TestKnowledgeChunkManagementViewEditAndAdd(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_knowledge_base_identity (base_id,owner_user_id,access_mode) VALUES (?,?,?)",
+		"kb-chunks", identityIDs["alice"], "assigned",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
 		"INSERT INTO ai_knowledge_base_member (base_id,username) VALUES (?,?)",
 		"kb-chunks", "bob",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_knowledge_base_identity_member (base_id,user_id) VALUES (?,?)",
+		"kb-chunks", identityIDs["bob"],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +135,7 @@ func TestKnowledgeChunkManagementViewEditAndAdd(t *testing.T) {
 	if updatedContent != "updated needle content" {
 		t.Fatalf("chunk content not updated: %q", updatedContent)
 	}
-	prompt, err := handler.knowledgePrompt(ctx, "alice", "kb-chunks", "needle")
+	prompt, err := handler.knowledgePrompt(ctx, middleware.Identity{Username:"alice",UserID:identityIDs["alice"],Provider:"local"}, "kb-chunks", "needle")
 	if err != nil || !strings.Contains(prompt, "updated needle content") {
 		t.Fatalf("edited chunk should be immediately searchable: prompt=%q err=%v", prompt, err)
 	}
@@ -129,7 +152,7 @@ func TestKnowledgeChunkManagementViewEditAndAdd(t *testing.T) {
 	if chunkCount != 2 {
 		t.Fatalf("document chunk_count should be updated, got %d", chunkCount)
 	}
-	prompt, err = handler.knowledgePrompt(ctx, "alice", "kb-chunks", "supplemental")
+	prompt, err = handler.knowledgePrompt(ctx, middleware.Identity{Username:"alice",UserID:identityIDs["alice"],Provider:"local"}, "kb-chunks", "supplemental")
 	if err != nil || !strings.Contains(prompt, "manually added supplemental material") {
 		t.Fatalf("new chunk should be immediately searchable: prompt=%q err=%v", prompt, err)
 	}

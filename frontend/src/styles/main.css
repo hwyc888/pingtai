@@ -1270,3 +1270,253 @@ button:disabled { cursor: not-allowed; }
   .attachment-list .attachment-name { max-width: clamp(70px, 30vw, 150px); }
   .composer-input { max-height: 140px; }
 }
+
+
+/* Owner-aware knowledge list: duplicate names remain clearly attributable. */
+.knowledge-owner-filter {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 112px;
+  gap: 7px;
+  margin: 10px 0 12px;
+}
+.knowledge-owner-filter input,
+.knowledge-owner-filter select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #e6eaf3;
+  border-radius: 9px;
+  outline: none;
+  color: #59647f;
+  font-size: 11px;
+  background: #fff;
+}
+.knowledge-owner-filter input:focus,
+.knowledge-owner-filter select:focus { border-color: #aebaff; }
+.knowledge-list-item .knowledge-owner-badge {
+  display: block;
+  margin: 3px 0 2px;
+  color: #7c86a0;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+/* Doubao-style integrated composer: attachment, prompt, input and controls share one surface. */
+.chat-footer {
+  padding: 10px max(16px,calc((100% - 1120px)/2)) max(14px,env(safe-area-inset-bottom));
+  border-top: 0;
+  background: rgba(246,248,255,.88);
+  box-shadow: 0 -8px 28px rgba(75,91,148,.035);
+}
+.composer-shell {
+  display: flex;
+  width: 100%;
+  max-width: 1120px;
+  min-width: 0;
+  min-height: 178px;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 auto;
+  padding: 12px 16px 11px;
+  overflow: hidden;
+  border: 1px solid #dce5ff;
+  border-radius: 23px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(81,113,190,.09);
+}
+.composer-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  max-height: 168px;
+  height: auto;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 3px 9px;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  color: #303a54;
+  font-size: 15px;
+  line-height: 1.7;
+  background: transparent;
+}
+.composer-input:focus { box-shadow: none; }
+.composer-input::placeholder { color: #a1a9ba; }
+.composer-actions {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0 0;
+  border-radius: 0;
+  background: transparent;
+}
+.composer-tool-group {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 11px;
+}
+.composer-tool-group > .attach-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  color: #596886;
+  font-size: 25px;
+}
+.composer-tool-group .footer-toolbar {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 11px;
+  padding: 0;
+}
+.composer-tool-group .model-select-label { min-width: 0; }
+.composer-tool-group .model-select-label select {
+  max-width: min(38vw,250px);
+  min-width: 110px;
+  height: 31px;
+  background: #f7f8fb;
+}
+.composer-tool-group .knowledge-toggle {
+  min-height: 31px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #f7f8fb;
+  font-size: 11px;
+}
+.composer-tool-group .knowledge-base-select {
+  max-width: min(35vw,220px);
+  min-width: 90px;
+  height: 31px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: #f7f8fb;
+}
+.composer-actions .send-button {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 50%;
+  font-size: 24px;
+}
+.composer-actions .stop-button {
+  min-width: 80px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 20px;
+}
+.attachment-list {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 88px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0 0 7px;
+  padding: 0 1px 2px;
+}
+.attachment-list .attachment-chip {
+  display: flex;
+  min-width: 0;
+  max-width: min(100%,300px);
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid #eff1f5;
+  border-radius: 12px;
+  color: #53617b;
+  background: #f6f7f9;
+}
+.attachment-list .attachment-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 8px;
+  color: #4e7cff;
+  background: #fff;
+}
+.attachment-list .attachment-name {
+  display: block;
+  min-width: 0;
+  max-width: clamp(90px,22vw,220px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-list .attachment-chip small {
+  flex: 0 0 auto;
+  color: #98a1b2;
+  font-size: 10px;
+}
+.attachment-list .attachment-chip button {
+  flex: 0 0 auto;
+  margin-left: 1px;
+  padding: 0 2px;
+}
+.attachment-suggestions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 2px 0 4px;
+}
+.attachment-suggestions button {
+  max-width: 100%;
+  min-height: 32px;
+  padding: 0 11px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10px;
+  color: #4e586f;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #f3f4f6;
+}
+.attachment-suggestions button:hover { color: #365fe5; background: #edf1ff; }
+.attachment-suggestions button span { margin-left: 5px; font-size: 15px; }
+.composer-shell .editing-message-bar {
+  margin: 0 0 8px;
+}
+@media (max-width: 760px) {
+  .knowledge-owner-filter { grid-template-columns: minmax(0,1fr) 96px; }
+  .chat-footer { padding: 7px 10px max(10px,env(safe-area-inset-bottom)); }
+  .composer-shell {
+    min-height: 146px;
+    padding: 9px 11px 9px;
+    border-radius: 20px;
+  }
+  .composer-input { min-height: 62px; max-height: 140px; padding: 8px 2px; font-size: 14px; }
+  .composer-actions { min-height: 39px; gap: 7px; padding-top: 5px; }
+  .composer-tool-group { flex-wrap: wrap; gap: 5px 7px; }
+  .composer-tool-group .footer-toolbar { gap: 5px; }
+  .composer-tool-group .model-select-label { flex: 1 1 130px; }
+  .composer-tool-group .model-select-label select { width: 100%; max-width: 100%; min-width: 0; }
+  .composer-tool-group .knowledge-base-select { max-width: 100%; min-width: 90px; flex: 1 1 110px; }
+  .composer-tool-group .model-current-hint { display: none; }
+  .composer-actions .send-button { width: 38px; height: 38px; flex-basis: 38px; }
+  .attachment-list { max-height: 78px; gap: 6px; }
+  .attachment-list .attachment-chip { max-width: 100%; padding: 7px 9px; }
+  .attachment-list .attachment-name { max-width: clamp(70px,28vw,150px); }
+  .attachment-suggestions { gap: 5px; }
+  .attachment-suggestions button { min-height: 29px; padding: 0 8px; font-size: 10px; }
+}

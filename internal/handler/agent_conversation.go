@@ -20,13 +20,13 @@ func (h *Handler) CreateConversation(w http.ResponseWriter, r *http.Request) {
 	}
 	botID := stringValue(payload["bot_id"])
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
+		identity, _ := h.identityForRequest(r)
 		id, err := util.NewID()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "生成会话ID失败")
 			return
 		}
-		if err := h.Chats.CreateConversation(r.Context(), id, identity.Username, botID); err != nil {
+		if err := h.Chats.CreateConversation(r.Context(), id, identity.UserID, botID); err != nil {
 			writeError(w, http.StatusInternalServerError, "创建会话失败")
 			return
 		}
@@ -46,8 +46,8 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.Config.UsesLocalConversations() {
-		identity, _ := currentIdentity(r)
-		item, err := h.Chats.FindConversation(r.Context(), conversationID, identity.Username)
+		identity, _ := h.identityForRequest(r)
+		item, err := h.Chats.FindConversation(r.Context(), conversationID, identity.UserID)
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]any{"code": 404, "msg": "会话不存在"})
 			return

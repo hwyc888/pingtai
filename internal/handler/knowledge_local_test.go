@@ -4,14 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"database/sql"
 	"strings"
 	"testing"
 
 	"pingtai/internal/config"
+	"pingtai/internal/database"
+	"pingtai/internal/middleware"
 	"pingtai/internal/repository"
 
-	_ "modernc.org/sqlite"
 )
 
 func TestSplitKnowledgeTextCreatesOverlappingChunks(t *testing.T) {
@@ -69,54 +69,19 @@ func TestBoolFromValue(t *testing.T) {
 }
 
 func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	db.SetMaxOpenConns(1)
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err = db.Exec(`CREATE TABLE ai_user (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL UNIQUE,
-		password TEXT NOT NULL DEFAULT '',
-		usertype INTEGER NOT NULL DEFAULT 0,
-		status INTEGER NOT NULL DEFAULT 1,
-		deltag INTEGER NOT NULL DEFAULT 0,
-		openid TEXT DEFAULT NULL,
-		bind_time DATETIME DEFAULT NULL,
-		created_at DATETIME DEFAULT NULL,
-		updated_at DATETIME DEFAULT NULL
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TABLE ai_knowledge_base (
-		id TEXT PRIMARY KEY,
-		name TEXT NOT NULL DEFAULT '',
-		enabled INTEGER NOT NULL DEFAULT 1,
-		created_by TEXT NOT NULL DEFAULT ''
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TABLE ai_knowledge_base_policy (
-		base_id TEXT PRIMARY KEY,
-		owner_username TEXT NOT NULL,
-		access_mode TEXT NOT NULL
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = db.Exec(`CREATE TABLE ai_knowledge_base_member (
-		base_id TEXT NOT NULL,
-		username TEXT NOT NULL,
-		PRIMARY KEY (base_id, username)
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, user := range []struct {
+	users := repository.NewUserRepository(db)
+	identities := make(map[string]string)
+	for _, item := range []struct {
 		name string
 		role int
 	}{
@@ -124,23 +89,47 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 		{name: "bob", role: 0},
 		{name: "admin", role: 1},
 	} {
-		if _, err := db.Exec("INSERT INTO ai_user (username,usertype,status,deltag) VALUES (?,?,1,0)", user.name, user.role); err != nil {
+		id, err := users.Create(ctx, item.name, "test-hash", item.role)
+		if err != nil {
+			t.Fatal(err)
+		}
+		user, err := users.FindByID(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identity, err := users.EnsureLocalIdentity(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identities[item.name] = identity.ID
+	}
+	for _, item := range []struct {
+		id, owner string
+	}{
+		{"kb-alice", "alice"}, {"kb-bob", "bob"},
+	} {
+		if _, err := db.ExecContext(ctx,
+			"INSERT INTO ai_knowledge_base (id,name,description,enabled,created_by,created_at,updated_at) VALUES (?,?, '',1,?,'now','now')",
+			item.id, item.id, item.owner,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx,
+			"INSERT INTO ai_knowledge_base_policy (base_id,owner_username,access_mode) VALUES (?,?,'private')",
+			item.id, item.owner,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(ctx,
+			"INSERT INTO ai_knowledge_base_identity (base_id,owner_user_id,access_mode) VALUES (?,?,'private')",
+			item.id, identities[item.owner],
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Exec("INSERT INTO ai_knowledge_base (id,created_by) VALUES ('kb-alice','alice'),('kb-bob','bob')"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO ai_knowledge_base_policy (base_id,owner_username,access_mode) VALUES ('kb-alice','alice','private'),('kb-bob','bob','private')"); err != nil {
-		t.Fatal(err)
-	}
 
-	h := &Handler{
-		Config: &config.Config{},
-		DB: db,
-		Users: repository.NewUserRepository(db),
-	}
-	ctx := context.Background()
+	cfg := &config.Config{}
+	h := &Handler{Config: cfg, DB: db, Users: users}
 	cases := []struct {
 		username string
 		baseID string
@@ -155,7 +144,8 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 		{username: "alice", baseID: "missing", want: false},
 	}
 	for _, tc := range cases {
-		got, err := h.canAccessKnowledgeBase(ctx, tc.username, tc.baseID)
+		identity := middleware.Identity{Username: tc.username, UserID: identities[tc.username], Provider: "local"}
+		got, err := h.canAccessKnowledgeBase(ctx, identity, tc.baseID)
 		if err != nil {
 			t.Fatalf("%s accessing %s: %v", tc.username, tc.baseID, err)
 		}
@@ -163,7 +153,8 @@ func TestKnowledgeBaseOwnerIsolation(t *testing.T) {
 			t.Errorf("%s access to %s = %v, want %v", tc.username, tc.baseID, got, tc.want)
 		}
 	}
-	if _, err := h.knowledgePrompt(ctx, "alice", "kb-bob", "private material"); err == nil || err.Error() != "所选知识库不存在或无权访问" {
+	aliceIdentity := middleware.Identity{Username:"alice",UserID:identities["alice"],Provider:"local"}
+	if _, err := h.knowledgePrompt(ctx, aliceIdentity, "kb-bob", "private material"); err == nil || err.Error() != "所选知识库不存在或无权访问" {
 		t.Fatalf("a user must not retrieve another user's knowledge base, got error: %v", err)
 	}
 }

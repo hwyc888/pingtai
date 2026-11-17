@@ -13,12 +13,12 @@ func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	identity, _ := currentIdentity(r)
+	identity, _ := h.identityForRequest(r)
 	limit := intValue(r.URL.Query().Get("limit"), 50)
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
-	items, err := h.Chats.ListConversations(r.Context(), identity.Username, limit)
+	items, err := h.Chats.ListConversations(r.Context(), identity.UserID, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取历史会话失败")
 		return
@@ -41,8 +41,8 @@ func (h *Handler) DeleteConversation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "当前会话提供方暂不支持本地历史删除")
 		return
 	}
-	identity, _ := currentIdentity(r)
-	if err := h.Chats.DeleteConversation(r.Context(), id, identity.Username); err != nil {
+	identity, _ := h.identityForRequest(r)
+	if err := h.Chats.DeleteConversation(r.Context(), id, identity.UserID); err != nil {
 		if err == sql.ErrNoRows {
 			writeError(w, http.StatusNotFound, "会话不存在")
 			return

@@ -16,9 +16,11 @@ type identityKey struct{}
 type Identity struct {
 	Username    string
 	DisplayName string
+	UserID      string
+	Provider    string
 	JTI         string
-	Expires  int64
-	APIKey   bool
+	Expires     int64
+	APIKey      bool
 }
 
 func IdentityFromContext(ctx context.Context) (Identity, bool) {
@@ -99,7 +101,7 @@ func RequireAPIOrAccess(tokens *authservice.TokenManager, apiKey string, next ht
 			}})
 			return
 		}
-		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, JTI: claims.JTI, Expires: claims.Expires}
+		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, UserID: claims.UserID, Provider: requestIdentityProvider(r, claims.Provider), JTI: claims.JTI, Expires: claims.Expires}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, identity)))
 	})
 }
@@ -125,10 +127,21 @@ func requireToken(tokens *authservice.TokenManager, expectedType string, next ht
 			writeAuthError(w, http.StatusUnauthorized, "Invalid token")
 			return
 		}
-		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, JTI: claims.JTI, Expires: claims.Expires}
+		identity := Identity{Username: claims.Subject, DisplayName: claims.Name, UserID: claims.UserID, Provider: requestIdentityProvider(r, claims.Provider), JTI: claims.JTI, Expires: claims.Expires}
 		ctx := context.WithValue(r.Context(), identityKey{}, identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func requestIdentityProvider(r *http.Request, claimProvider string) string {
+	provider := strings.TrimSpace(claimProvider)
+	if provider != "" {
+		return provider
+	}
+	if cookie, err := r.Cookie("pingtai_auth_method"); err == nil && cookie.Value == "sso" {
+		return "sso"
+	}
+	return "local"
 }
 
 func bearerToken(value string) string {

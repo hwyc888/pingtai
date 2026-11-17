@@ -66,3 +66,53 @@ func TestSQLiteMigrationsAreIdempotent(t *testing.T) {
 		t.Fatalf("existing SQLite data was not preserved: username=%q err=%v", username, err)
 	}
 }
+
+
+func TestStableIdentityMigrationBackfillsExistingChatAndKnowledgeOwnership(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_user (username,password,usertype,status,deltag) VALUES ('alice','hash',0,1,0)",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_conversation (id,user_id,bot_id,created_at,updated_at) VALUES ('legacy-chat','alice','bot','now','now')",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_knowledge_base (id,name,description,enabled,created_by,created_at,updated_at) VALUES ('legacy-kb','test','',1,'alice','now','now')",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx,
+		"INSERT INTO ai_knowledge_base_policy (base_id,owner_username,access_mode) VALUES ('legacy-kb','alice','private')",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("identity backfill migration failed: %v", err)
+	}
+	var localID, conversationOwner, knowledgeOwner string
+	if err := db.QueryRowContext(ctx, "SELECT id FROM ai_identity WHERE provider='local' AND username='alice'").Scan(&localID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT user_id FROM ai_conversation WHERE id='legacy-chat'").Scan(&conversationOwner); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT owner_user_id FROM ai_knowledge_base_identity WHERE base_id='legacy-kb'").Scan(&knowledgeOwner); err != nil {
+		t.Fatal(err)
+	}
+	if localID != "local-1" || conversationOwner != localID || knowledgeOwner != localID {
+		t.Fatalf("legacy ownership was not migrated to stable ID: identity=%q conversation=%q knowledge=%q",
+			localID, conversationOwner, knowledgeOwner)
+	}
+}

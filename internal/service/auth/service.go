@@ -64,12 +64,20 @@ func (s *Service) IssuePairWithName(username, name string) (TokenPair, error) {
 	return s.tokens.IssuePairWithName(username, name)
 }
 
+func (s *Service) IssuePairForIdentity(username, name, userID, provider string) (TokenPair, error) {
+	return s.tokens.IssuePairForIdentity(username, name, userID, provider)
+}
+
 func (s *Service) IssueAccess(username string) (string, error) {
 	return s.tokens.IssueAccess(username)
 }
 
 func (s *Service) IssueAccessWithName(username, name string) (string, error) {
 	return s.tokens.IssueAccessWithName(username, name)
+}
+
+func (s *Service) IssueAccessForIdentity(username, name, userID, provider string) (string, error) {
+	return s.tokens.IssueAccessForIdentity(username, name, userID, provider)
 }
 
 func (s *Service) Parse(token string) (Claims, error) {
