@@ -1520,3 +1520,338 @@ button:disabled { cursor: not-allowed; }
   .attachment-suggestions { gap: 5px; }
   .attachment-suggestions button { min-height: 29px; padding: 0 8px; font-size: 10px; }
 }
+
+
+/* Compact ChatGPT-style composer: one line until typing expands or files are selected. */
+.chat-footer {
+  padding: 10px max(14px, calc((100% - 1050px)/2)) max(14px, env(safe-area-inset-bottom));
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.composer-shell {
+  max-width: 1050px;
+  border: 1px solid #e1e5ef;
+  background: #fff;
+  box-shadow: 0 6px 23px rgba(39,55,99,.075);
+  transition: border-radius .18s ease, box-shadow .18s ease;
+}
+.composer-shell:focus-within {
+  border-color: #ccd6ed;
+  box-shadow: 0 7px 26px rgba(39,55,99,.095);
+}
+.composer-shell.composer-compact {
+  display: grid;
+  grid-template-columns: 40px minmax(0,1fr) minmax(0,max-content) 42px;
+  grid-template-rows: 46px;
+  align-items: center;
+  column-gap: 8px;
+  min-height: 0;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
+  overflow: visible;
+}
+.composer-compact .composer-input {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 28px;
+  max-height: 30px;
+  width: 100%;
+  padding: 1px 2px;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 26px;
+}
+.composer-compact .composer-actions,
+.composer-compact .composer-tool-group { display: contents; }
+.composer-compact .attach-button {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+}
+.composer-compact .footer-toolbar {
+  grid-column: 3;
+  grid-row: 1;
+  display: flex;
+  flex: 0 0 auto;
+  max-width: min(50vw,520px);
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+}
+.composer-compact .model-select-label,
+.composer-compact .knowledge-toggle { flex: 0 0 auto; }
+.composer-compact .model-select-label > span { display: none; }
+.composer-compact .model-select-label select {
+  min-width: 80px;
+  max-width: min(21vw,185px);
+  height: 32px;
+  padding: 3px 7px;
+  border-color: transparent;
+  background: #f6f7fa;
+  font-size: 11px;
+}
+.composer-compact .knowledge-toggle {
+  min-height: 32px;
+  border: 0;
+  padding: 0 7px;
+  background: #f6f7fa;
+}
+.composer-compact .knowledge-base-select {
+  min-width: 70px;
+  max-width: min(18vw,155px);
+  height: 32px;
+  border-color: transparent;
+  background: #f6f7fa;
+}
+.composer-compact .send-button,
+.composer-compact .stop-button {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+}
+.composer-compact .stop-button { min-width: 38px; width: 38px; padding: 0; font-size: 0; }
+.composer-compact .stop-button span { width: 10px; height: 10px; margin: auto; }
+.composer-compact .send-button { width: 38px; height: 38px; flex-basis: 38px; }
+
+.composer-shell.composer-expanded {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 13px 16px 11px;
+  border-radius: 23px;
+  overflow: hidden;
+}
+.composer-expanded .composer-input {
+  min-height: 73px;
+  width: 100%;
+  padding: 9px 4px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.composer-expanded .composer-actions {
+  width: 100%;
+  min-height: 42px;
+  padding: 7px 0 0;
+}
+.composer-expanded .composer-tool-group {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.composer-expanded .footer-toolbar { min-width: 0; flex-wrap: wrap; }
+.composer-shell .model-current-hint { display: none; }
+
+.composer-expanded .attachment-list {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  max-height: none;
+  min-height: 113px;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 9px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0 0 10px;
+  padding: 0 1px 5px;
+  scrollbar-width: thin;
+}
+.attachment-list .attachment-tile {
+  position: relative;
+  display: flex;
+  width: 148px;
+  height: 111px;
+  min-width: 148px;
+  max-width: 148px;
+  flex: 0 0 148px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding: 17px 9px 10px;
+  border: 1px solid #e8ebf3;
+  border-radius: 15px;
+  background: #f7f8fa;
+}
+.attachment-list .attachment-tile-icon {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  font-size: 35px;
+  line-height: 1;
+  color: #6f84b0;
+}
+.attachment-list .attachment-tile-details {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.attachment-tile-details strong {
+  width: 100%;
+  overflow: hidden;
+  color: #34405b;
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-tile-details small {
+  color: #969fb0;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.attachment-list .attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #81899d;
+  font-size: 17px;
+  background: transparent;
+  cursor: pointer;
+}
+.attachment-list .attachment-remove:hover { color: #b94b59; background: #ffe8eb; }
+.attachment-list .attachment-remove:disabled { opacity: .4; cursor: default; }
+
+/* File references stay visible in the sent message and when reopening local history. */
+.message-file-references {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.message-file-reference {
+  display: flex;
+  min-width: 0;
+  width: min(240px,100%);
+  max-width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid #e5e8ef;
+  border-radius: 13px;
+  background: #f6f7fa;
+}
+.message-file-reference .file-reference-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 10px;
+  color: #567bd7;
+  font-size: 25px;
+  background: #fff;
+}
+.message-file-reference .file-reference-details {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.file-reference-details strong {
+  overflow: hidden;
+  color: #49536e;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-reference-details small { color: #9ca5b5; font-size: 10px; }
+.user-message-actions button:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 760px) {
+  .chat-footer { padding: 7px 10px max(9px,env(safe-area-inset-bottom)); }
+  .composer-shell.composer-compact {
+    grid-template-columns: 33px minmax(0,1fr) 36px;
+    grid-template-rows: 43px auto;
+    min-height: 0;
+    column-gap: 6px;
+    padding: 5px 9px 6px;
+    border-radius: 23px;
+  }
+  .composer-compact .composer-input {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 27px;
+    max-height: 28px;
+    padding: 0 2px;
+    font-size: 13px;
+    line-height: 27px;
+  }
+  .composer-compact .attach-button { grid-column: 1; grid-row: 1; }
+  .composer-compact .send-button,
+  .composer-compact .stop-button { grid-column: 3; grid-row: 1; }
+  .composer-compact .footer-toolbar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: 100%;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 1px 0 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .composer-compact .model-select-label select {
+    min-width: 90px;
+    max-width: 36vw;
+    height: 30px;
+    font-size: 11px;
+  }
+  .composer-compact .knowledge-toggle {
+    min-height: 30px;
+    flex: 0 0 auto;
+    padding: 0 6px;
+  }
+  .composer-compact .knowledge-base-select {
+    min-width: 76px;
+    max-width: 30vw;
+    height: 30px;
+  }
+  .composer-shell.composer-expanded {
+    min-height: 0;
+    padding: 10px 11px 9px;
+    border-radius: 20px;
+  }
+  .composer-expanded .attachment-list { min-height: 100px; gap: 7px; margin-bottom: 6px; }
+  .attachment-list .attachment-tile {
+    width: 121px;
+    height: 98px;
+    min-width: 121px;
+    max-width: 121px;
+    flex-basis: 121px;
+    padding: 12px 8px 8px;
+  }
+  .attachment-list .attachment-tile-icon { font-size: 30px; }
+  .composer-expanded .composer-input { min-height: 64px; max-height: 128px; padding: 8px 2px; font-size: 14px; }
+  .composer-expanded .composer-tool-group { flex-wrap: wrap; gap: 5px; }
+  .composer-expanded .footer-toolbar { gap: 5px; min-width: 0; }
+  .composer-expanded .model-select-label { flex: 0 1 auto; }
+  .composer-expanded .model-select-label select { width: auto; max-width: min(44vw,170px); min-width: 88px; }
+  .composer-expanded .knowledge-base-select { max-width: min(35vw,165px); min-width: 80px; flex: 0 1 auto; }
+  .composer-expanded .send-button { width: 38px; height: 38px; flex-basis: 38px; }
+  .message-file-reference { width: min(210px,100%); padding: 8px; }
+  .message-file-reference .file-reference-icon { width: 32px; height: 32px; flex-basis: 32px; }
+}
+@media (max-width: 375px) {
+  .composer-compact .model-select-label select { max-width: 31vw; }
+  .composer-compact .knowledge-base-select { max-width: 26vw; }
+  .composer-expanded .footer-toolbar { gap: 4px; }
+  .composer-expanded .knowledge-base-select { max-width: 44vw; }
+}

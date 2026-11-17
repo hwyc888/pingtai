@@ -19,6 +19,12 @@ type Chat struct {
 	UpdatedAt      time.Time "json:\"updated_at\""
 }
 
+type MessageAttachment struct {
+	Name string `json:"name"`
+	Size int64 `json:"size"`
+	Type string `json:"type"`
+}
+
 type Message struct {
 	ID               int64     "json:\"id\""
 	ConversationID   string    "json:\"conversation_id\""
@@ -26,5 +32,6 @@ type Message struct {
 	Role             string    "json:\"role\""
 	Content          string    "json:\"content\""
 	ReasoningContent string    "json:\"reasoning_content,omitempty\""
+	Attachments      []MessageAttachment `json:"attachments,omitempty"`
 	CreatedAt        time.Time "json:\"created_at\""
 }

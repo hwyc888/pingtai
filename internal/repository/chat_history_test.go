@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"pingtai/internal/database"
+	"pingtai/internal/model"
 )
 
 func TestConversationHistoryListsOnlyUsersOwnNonEmptyConversations(t *testing.T) {
@@ -347,5 +350,69 @@ func TestClearAllConversationsOnlyDeletesCurrentUsersHistory(t *testing.T) {
 	if aliceConversations != 0 || bobConversations != 1 || aliceChats != 0 || bobChats != 1 || aliceMessages != 0 || bobMessages != 1 {
 		t.Fatalf("clear all history leaked across users: alice conversations/chats/messages=%d/%d/%d, bob=%d/%d/%d",
 			aliceConversations, aliceChats, aliceMessages, bobConversations, bobChats, bobMessages)
+	}
+}
+
+
+func TestChatAttachmentReferencesPersistAndContextKeepsText(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := NewChatRepository(db)
+	if err := repo.CreateConversation(ctx, "conversation-files", "local-1", "bot"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateChat(ctx, "chat-files", "conversation-files", "completed"); err != nil {
+		t.Fatal(err)
+	}
+	userMessage, err := repo.InsertMessage(ctx, "conversation-files", "chat-files", "user", "请总结文档", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	references := []model.MessageAttachment{
+		{Name: "制度.txt", Size: 128, Type: "file"},
+		{Name: "截图.png", Size: 4096, Type: "image"},
+	}
+	if err := repo.SaveMessageAttachments(ctx, userMessage.ID, references); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveMessageContent(ctx, userMessage.ID, "请总结文档\n\n附件 制度.txt:\n课程安排"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.InsertMessage(ctx, "conversation-files", "chat-files", "assistant", "好的", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := repo.ListMessages(ctx, "conversation-files", 20, "asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Content != "请总结文档" || len(items[0].Attachments) != 2 {
+		t.Fatalf("expected a text prompt and two visible file references, got %#v", items)
+	}
+	if items[0].Attachments[0].Name != "制度.txt" || items[0].Attachments[1].Type != "image" {
+		t.Fatalf("attachment references changed: %#v", items[0].Attachments)
+	}
+	found, err := repo.FindMessage(ctx, userMessage.ID, "conversation-files", "local-1")
+	if err != nil || len(found.Attachments) != 2 {
+		t.Fatalf("message lookup lost attachments: %#v, %v", found, err)
+	}
+	byChat, err := repo.MessagesByChat(ctx, "chat-files", "conversation-files", "local-1")
+	if err != nil || len(byChat) != 2 || len(byChat[0].Attachments) != 2 {
+		t.Fatalf("chat message list lost attachments: %#v, %v", byChat, err)
+	}
+	contextMessages, err := repo.ContextMessages(ctx, "conversation-files", 10)
+	if err != nil || len(contextMessages) != 2 {
+		t.Fatalf("conversation context was not retained: %#v, %v", contextMessages, err)
+	}
+	if !strings.Contains(string(contextMessages[0]["content"].(json.RawMessage)), "课程安排") {
+		t.Fatalf("model context lost TXT attachment contents: %#v", contextMessages[0])
 	}
 }
