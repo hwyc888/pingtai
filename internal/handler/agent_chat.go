@@ -175,7 +175,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = h.Chats.UpdateConversationBot(r.Context(), conversationID, identity.UserID, botID)
 
-	userContent, storedContent, err := h.buildModelUserContent(r, content)
+	userContent, _, err := h.buildModelUserContent(r, content)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 400, "msg": err.Error()})
 		return
@@ -220,15 +220,33 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "创建聊天记录失败")
 		return
 	}
-	userMessage, err := h.Chats.InsertMessage(r.Context(), conversationID, chatID, "user", storedContent, "")
+	userMessage, err := h.Chats.InsertMessage(r.Context(), conversationID, chatID, "user", content, "")
 	if err != nil {
 		_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, "保存用户消息失败")
 		return
 	}
-	if _, plainText := userContent.(string); !plainText {
+	files := requestChatFiles(r)
+	if len(files) > 0 {
+		references := make([]model.MessageAttachment, 0, len(files))
+		for _, file := range files {
+			kind := "file"
+			if isKnowledgeImageFilename(file.Filename) {
+				kind = "image"
+			}
+			references = append(references, model.MessageAttachment{
+				Name: filepath.Base(file.Filename), Size: file.Size, Type: kind,
+			})
+		}
+		if err := h.Chats.SaveMessageAttachments(r.Context(), userMessage.ID, references); err != nil {
+			_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", "cannot save attachment references")
+			writeError(w, http.StatusInternalServerError, "保存文件引用失败")
+			return
+		}
+	}
+	if len(files) > 0 || r.FormValue("url") != "" {
 		if err := h.Chats.SaveMessageContent(r.Context(), userMessage.ID, userContent); err != nil {
-			_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", "cannot save multimodal context")
+			_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", "cannot save attachment context")
 			writeError(w, http.StatusInternalServerError, "保存附件上下文失败")
 			return
 		}
@@ -419,5 +437,6 @@ func formatMessage(item model.Message) map[string]any {
 	return map[string]any{
 		"id": item.ID, "role": item.Role, "content": item.Content,
 		"reasoning_content": item.ReasoningContent, "created_at": item.CreatedAt,
+		"attachments": item.Attachments,
 	}
 }

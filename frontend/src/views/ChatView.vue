@@ -41,7 +41,21 @@ let activeRequestController = null
 let stopRequested = false
 
 const usernameInitial = computed(() => (username.value || 'U').trim().slice(0, 1).toUpperCase())
-const canSend = computed(() => !isSending.value && Boolean(draft.value.trim()))
+const canSend = computed(() => !isSending.value && Boolean(draft.value.trim() || attachments.value.length))
+const composerExpanded = computed(() =>
+  attachments.value.length > 0 || Boolean(editingMessageId.value) ||
+  draft.value.includes('\n') || draft.value.length > 55
+)
+
+function fileReference(file) {
+  return { name: file.name, size: file.size, type: isImageFile(file) ? 'image' : 'file' }
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes) || 0
+  return size >= 1048576 ? (size / 1048576).toFixed(1) + ' MB'
+    : size >= 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B'
+}
 
 function assertSuccess(result) {
   if (result?.error) throw new Error(result.msg || copy.requestFailed)
@@ -294,6 +308,7 @@ async function openConversation(item) {
         role: message.role,
         content: normalizeContent(message.content),
         reasoning_content: normalizeContent(message.reasoning_content),
+        attachments: Array.isArray(message.attachments) ? message.attachments : [],
         pending: false,
       }))
     conversationId.value = item.id
@@ -362,7 +377,7 @@ async function clearAllHistory() {
 }
 
 async function sendMessage(text = draft.value, options = {}) {
-  const content = String(text || '').trim()
+  const content = String(text || '').trim() || (attachments.value.length ? '请阅读并分析附件内容。' : '')
   if (!content || isSending.value) return
   isSending.value = true
   pageError.value = ''
@@ -405,7 +420,10 @@ async function sendMessage(text = draft.value, options = {}) {
     messages.value.splice(editedIndex)
     editingMessageId.value = ''
   }
-  if (!options.regenerate) messages.value.push({ id: 'user-' + Date.now(), role: 'user', content })
+  if (!options.regenerate) messages.value.push({
+    id: 'user-' + Date.now(), role: 'user', content,
+    attachments: selectedFiles.map(fileReference),
+  })
   const assistantIndex = messages.value.push({
     id: 'assistant-' + Date.now(), role: 'assistant', content: '', reasoning_content: '',
     pending: true, stopped: false,
@@ -556,6 +574,10 @@ function beginEditMessage(index) {
   if (!supportsMessageEdit.value || isSending.value) return
   const message = messages.value[index]
   if (!message || message.role !== 'user' || message.id == null) return
+  if (message.attachments?.length) {
+    pageError.value = '含附件的消息请重新上传文件后编辑重发。'
+    return
+  }
   editingMessageId.value = String(message.id)
   draft.value = message.content || ''
   pageError.value = ''
@@ -570,6 +592,10 @@ function cancelEditMessage() {
 
 function regenerateMessage(index) {
   const previousUser = [...messages.value.slice(0, index)].reverse().find((item) => item.role === 'user')
+  if (previousUser?.attachments?.length) {
+    pageError.value = '该消息含附件，请重新上传文件后提问，以免模型遗漏附件内容。'
+    return
+  }
   if (previousUser) sendMessage(previousUser.content, { regenerate: true })
 }
 
@@ -638,9 +664,18 @@ onBeforeUnmount(() => {
       <article v-for="(message, index) in messages" :key="message.id || index" class="message-row" :class="message.role === 'user' ? 'message-row-user' : 'message-row-assistant'">
         <template v-if="message.role === 'user'">
           <div class="user-message-wrap">
-            <div class="user-bubble">{{ message.content }}</div>
+            <div v-if="message.attachments?.length" class="message-file-references" aria-label="本次提问引用的文件">
+              <div v-for="(file, fileIndex) in message.attachments" :key="file.name + '-' + fileIndex" class="message-file-reference">
+                <span class="file-reference-icon" aria-hidden="true">{{ file.type === 'image' ? '▧' : '▤' }}</span>
+                <span class="file-reference-details">
+                  <strong :title="file.name">{{ file.name }}</strong>
+                  <small>{{ formatFileSize(file.size) }} · 文件引用</small>
+                </span>
+              </div>
+            </div>
+            <div v-if="message.content" class="user-bubble">{{ message.content }}</div>
             <div v-if="supportsMessageEdit && !isSending" class="user-message-actions">
-              <button type="button" @click="beginEditMessage(index)">编辑</button>
+              <button type="button" :disabled="message.attachments?.length" :title="message.attachments?.length ? '含附件的提问请重新上传文件后发送' : '编辑并重新发送'" @click="beginEditMessage(index)">编辑</button>
             </div>
           </div>
         </template>
@@ -669,53 +704,51 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div class="composer-shell">
+      <div class="composer-shell" :class="{ 'composer-compact': !composerExpanded, 'composer-expanded': composerExpanded }">
         <div v-if="editingMessageId" class="editing-message-bar">
           <span>正在编辑已发送的问题，重新发送后该消息之后的回答将被替换</span>
           <button type="button" :disabled="isSending" @click="cancelEditMessage">取消编辑</button>
         </div>
-        <div v-if="attachments.length" class="attachment-list" aria-label="待发送附件">
-          <div v-for="(attachment, index) in attachments" :key="attachment.name + '-' + attachment.lastModified + '-' + index" class="attachment-chip">
-            <span class="attachment-icon">{{ isImageFile(attachment) ? '▧' : '▤' }}</span>
-            <span class="attachment-name">{{ attachment.name }}</span>
-            <small>{{ (attachment.size / 1024).toFixed(0) }} KB</small>
-            <button type="button" :aria-label="copy.removeFile" :disabled="isSending" @click="removeAttachment(index)">&times;</button>
+        <div v-if="attachments.length" class="attachment-list" aria-label="待发送文件引用">
+          <div v-for="(attachment, index) in attachments" :key="attachment.name + '-' + attachment.lastModified + '-' + index" class="attachment-tile">
+            <button class="attachment-remove" type="button" :aria-label="'移除 ' + attachment.name" :disabled="isSending" @click="removeAttachment(index)">&times;</button>
+            <span class="attachment-tile-icon" aria-hidden="true">{{ isImageFile(attachment) ? '▧' : '▤' }}</span>
+            <span class="attachment-tile-details">
+              <strong :title="attachment.name">{{ attachment.name }}</strong>
+              <small>{{ isImageFile(attachment) ? '图片' : 'TXT' }} · {{ formatFileSize(attachment.size) }}</small>
+            </span>
           </div>
-        </div>
-        <div v-if="attachments.length" class="attachment-suggestions">
-          <button type="button" :disabled="isSending" @click="draft = '请详细总结附件内容，并提炼核心要点。'">详细总结文档内容 <span>→</span></button>
-          <button type="button" :disabled="isSending" @click="draft = '请用通俗易懂的话说明附件主要讲了什么。'">用通俗的话解释文档 <span>→</span></button>
         </div>
         <textarea
           ref="composerInput"
           v-model="draft"
           class="composer-input"
           rows="1"
-          :placeholder="copy.sendPlaceholder"
+          :placeholder="attachments.length ? '询问附件内容…' : '发送消息开始提问…'"
           :disabled="isSending"
+          :aria-label="copy.sendPlaceholder"
           @keydown="handleComposerKeydown"
           @input="resizeComposer"
         ></textarea>
         <div class="composer-actions">
           <div class="composer-tool-group">
-            <label class="attach-button" :title="copy.attach">
+            <label class="attach-button" :title="copy.attach" aria-label="添加附件">
               <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
               <span aria-hidden="true">+</span>
             </label>
             <div v-if="models.length || knowledgeBases.length" class="footer-toolbar">
               <label v-if="models.length" class="model-select-label">
                 <span>模型</span>
-                <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" @change="selectModel($event.target.value)">
+                <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" aria-label="选择模型" @change="selectModel($event.target.value)">
                   <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
                 </select>
               </label>
-              <span v-if="selectedBot" class="model-current-hint">当前对话使用 {{ selectedBot.name }}</span>
-              <label class="knowledge-toggle">
-                <input v-model="knowledgeEnabled" type="checkbox" :disabled="!knowledgeBases.length || isSending" />
+              <label v-if="knowledgeBases.length" class="knowledge-toggle">
+                <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
                 <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
-                <span>使用知识库</span>
+                <span>知识库</span>
               </label>
-              <select v-if="knowledgeBases.length" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="!knowledgeEnabled || isSending">
+              <select v-if="knowledgeBases.length && knowledgeEnabled" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="isSending" aria-label="选择知识库">
                 <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }} · {{ base.owner_username }}</option>
               </select>
             </div>
