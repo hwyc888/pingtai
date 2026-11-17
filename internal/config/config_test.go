@@ -11,7 +11,7 @@ func TestDefaultAuthModeAndSQLitePath(t *testing.T) {
 	if cfg.AuthMode != "local" {
 		t.Fatalf("default auth mode = %q, want local", cfg.AuthMode)
 	}
-	if !strings.HasSuffix(cfg.DatabasePath, "data/pingtai.db") {
+	if cfg.DatabasePath != persistentDatabasePath() && cfg.DatabasePath != legacyDatabasePath() {
 		t.Fatalf("unexpected default SQLite path: %s", cfg.DatabasePath)
 	}
 	cfg.JWTSecret = strings.Repeat("s", 40)

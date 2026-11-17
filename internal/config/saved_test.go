@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -77,6 +78,9 @@ func TestLegacyMySQLConfigurationRequiresExplicitSQLiteMigration(t *testing.T) {
 }
 
 func TestDefaultDatabasePathUsesStableXDGDataHome(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_DATA_HOME is used by the Linux default path")
+	}
 	dataHome := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	want := filepath.Join(dataHome, "pingtai", "pingtai.db")
