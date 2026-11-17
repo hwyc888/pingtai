@@ -15,6 +15,9 @@ func TestSavedConfigurationSurvivesReloadAndOverridesEnvironment(t *testing.T) {
 	t.Setenv("JWT_SECRET_KEY", "stale-environment-secret")
 	saved := Defaults()
 	saved.DatabasePath = filepath.Join(t.TempDir(), "saved.db")
+	if err := os.WriteFile(saved.DatabasePath, []byte("existing sqlite database"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	saved.JWTSecret = strings.Repeat("secret", 8)
 	saved.CTYunAPIKey = "saved-model-key"
 	saved.CTYunSystemPrompt = "first line\nsecond line"
@@ -70,5 +73,73 @@ func TestLegacyMySQLConfigurationRequiresExplicitSQLiteMigration(t *testing.T) {
 	}
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "legacy MySQL configuration detected") {
 		t.Fatalf("legacy MySQL configuration should require explicit migration, got %v", err)
+	}
+}
+
+func TestDefaultDatabasePathUsesStableXDGDataHome(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	want := filepath.Join(dataHome, "pingtai", "pingtai.db")
+	if got := persistentDatabasePath(); got != want {
+		t.Fatalf("persistent database path = %q, want %q", got, want)
+	}
+}
+
+func TestSavedDatabasePathFallsBackToStableDataAfterReleaseFolderMove(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "pingtai-config.json")
+	dataHome := t.TempDir()
+	t.Setenv("PINGTAI_CONFIG_FILE", configPath)
+	t.Setenv("PINGTAI_DB_PATH", "")
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	stablePath := filepath.Join(dataHome, "pingtai", "pingtai.db")
+	if err := os.MkdirAll(filepath.Dir(stablePath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stablePath, []byte("existing stable database"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	saved := Defaults()
+	saved.DatabasePath = filepath.Join(t.TempDir(), "old-release", "data", "pingtai.db")
+	saved.JWTSecret = strings.Repeat("secret", 8)
+	if err := Save(saved); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DatabasePath != stablePath {
+		t.Fatalf("database path = %q, want stable path %q", loaded.DatabasePath, stablePath)
+	}
+}
+
+func TestExistingExplicitDatabasePathWinsWhenPresent(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "pingtai-config.json")
+	t.Setenv("PINGTAI_CONFIG_FILE", configPath)
+	t.Setenv("PINGTAI_DB_PATH", "")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	savedPath := filepath.Join(t.TempDir(), "saved.db")
+	explicitPath := filepath.Join(t.TempDir(), "explicit.db")
+	for _, path := range []string{savedPath, explicitPath} {
+		if err := os.WriteFile(path, []byte("existing database"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := Defaults()
+	saved.DatabasePath = savedPath
+	saved.JWTSecret = strings.Repeat("secret", 8)
+	if err := Save(saved); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PINGTAI_DB_PATH", explicitPath)
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.DatabasePath != explicitPath {
+		t.Fatalf("database path = %q, want explicit path %q", loaded.DatabasePath, explicitPath)
 	}
 }

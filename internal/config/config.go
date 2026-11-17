@@ -60,10 +60,12 @@ type Config struct {
 }
 
 func Load() (Config, error) {
+	// Load .env before reading saved settings so PINGTAI_DB_PATH and
+	// PINGTAI_CONFIG_FILE are available during upgrade-path resolution.
+	loadConfigDotEnv()
 	if saved, exists, err := loadSaved(); exists || err != nil {
 		return saved, err
 	}
-	loadConfigDotEnv()
 	if strings.TrimSpace(os.Getenv("MYSQL_DSN")) != "" || strings.TrimSpace(os.Getenv("DATABASE_URL")) != "" {
 		return Config{}, errors.New("legacy MySQL connection settings detected; export and migrate existing data to SQLite before removing MYSQL_DSN or DATABASE_URL")
 	}

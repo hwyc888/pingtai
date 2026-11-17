@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -20,7 +21,74 @@ func SettingsPath() string {
 }
 
 func DefaultDatabasePath() string {
+	stable := persistentDatabasePath()
+	if databaseFileExists(stable) {
+		return stable
+	}
+	// Keep using the pre-1.0.6 executable-relative database when it still exists.
+	// This prevents an in-place upgrade from silently opening a new empty database.
+	legacy := legacyDatabasePath()
+	if databaseFileExists(legacy) {
+		return legacy
+	}
+	return stable
+}
+
+func persistentDatabasePath() string {
+	if runtime.GOOS == "windows" {
+		if base := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); base != "" {
+			return filepath.Join(base, "ChaofanAI", "pingtai", "pingtai.db")
+		}
+	}
+	if runtime.GOOS == "darwin" {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			return filepath.Join(home, "Library", "Application Support", "ChaofanAI", "pingtai", "pingtai.db")
+		}
+	}
+	if base := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); base != "" && filepath.IsAbs(base) {
+		return filepath.Join(base, "pingtai", "pingtai.db")
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "share", "pingtai", "pingtai.db")
+	}
 	return filepath.Join(executableDir(), "data", "pingtai.db")
+}
+
+func legacyDatabasePath() string {
+	return filepath.Join(executableDir(), "data", "pingtai.db")
+}
+
+func databaseFileExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && info.Size() > 0
+}
+
+func resolveSavedDatabasePath(savedPath string) string {
+	environmentPath := strings.TrimSpace(os.Getenv("PINGTAI_DB_PATH"))
+	if databaseFileExists(environmentPath) {
+		return environmentPath
+	}
+	if databaseFileExists(savedPath) {
+		return savedPath
+	}
+	stable := persistentDatabasePath()
+	if databaseFileExists(stable) {
+		return stable
+	}
+	legacy := legacyDatabasePath()
+	if databaseFileExists(legacy) {
+		return legacy
+	}
+	if environmentPath != "" {
+		return environmentPath
+	}
+	if strings.TrimSpace(savedPath) != "" {
+		return savedPath
+	}
+	return stable
 }
 
 func Defaults() Config {
@@ -63,6 +131,9 @@ func loadSaved() (Config, bool, error) {
 	if _, exists := fields["SSOLoginEnabled"]; !exists {
 		saved.SSOLoginEnabled = saved.AuthMode == "sso" || saved.AuthMode == "multi"
 	}
+	// Preserve an existing database first. If an old release directory was removed,
+	// fall back to the stable OS data directory or an explicit PINGTAI_DB_PATH.
+	saved.DatabasePath = resolveSavedDatabasePath(saved.DatabasePath)
 	saved.AuthMode = saved.LoginMode()
 	return saved, true, nil
 }

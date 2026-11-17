@@ -56,9 +56,12 @@ For systemd, use deploy/pingtai.service. The example uses systemd `StateDirector
 - The first account is created atomically as an administrator. Once an account exists, public first-admin registration is permanently closed for that database.
 - A random JWT signing secret is generated automatically and stored in the SQLite `ai_platform_setting` table. No setup key or JWT secret needs to be copied into a web form.
 - Conversation history, users, provider credentials and platform settings are stored in SQLite. Provider API keys are never returned to the browser after saving.
-- The default database path is `data/pingtai.db` next to the executable. Set `PINGTAI_DB_PATH` to a writable persistent path for server deployments.
+- New Linux installs use the persistent user data path `~/.local/share/pingtai/pingtai.db` (or `$XDG_DATA_HOME/pingtai/pingtai.db`); Windows uses `%LOCALAPPDATA%\\ChaofanAI\\pingtai\\pingtai.db`. These paths do not change when a new release is extracted into a different directory.
+- Existing installations keep using a non-empty saved database path. If the saved path is missing, the app checks the stable data path and then the legacy `data/pingtai.db` beside the executable before creating a new database.
+- For systemd deployments, the example continues to use `/var/lib/pingtai/pingtai.db`. Set `PINGTAI_DB_PATH` explicitly when your existing database is stored elsewhere.
+- The release ZIP does not contain the database. Do not delete the persistent data directory when replacing the executable. If the previous release was extracted elsewhere, keep its old `data/pingtai.db` and point `PINGTAI_DB_PATH` to that file before the first start of the new release.
 - Protect the SQLite database and its backups; they contain account hashes, provider API keys and the platform signing secret.
-- Back up the database before replacing the executable. Database migrations are additive and do not delete conversation records.
+- Back up the database before replacing the executable. For SQLite WAL mode, stop the service before taking a file copy, or use SQLite's online backup command. Database migrations are additive and do not delete conversation records.
 
 ## AI provider management
 
