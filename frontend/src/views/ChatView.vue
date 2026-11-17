@@ -641,24 +641,24 @@ function stopGeneration() {
   stopRequested = true
   activeRequestController.abort()
 }
-function handleFileChange(event) {
-  const selected = Array.from(event.target.files || [])
-  event.target.value = ''
+function addAttachments(files) {
+  const selected = Array.from(files || [])
   if (!selected.length) return
 
   const allowed = ['txt', 'jpg', 'jpeg', 'png']
   const accepted = []
   let rejected = false
   for (const file of selected) {
-    const extension = file.name.split('.').pop().toLowerCase()
+    const filename = String(file?.name || '')
+    const extension = filename.split('.').pop().toLowerCase()
     if (!allowed.includes(extension)) {
       rejected = true
       continue
     }
     const duplicate = attachments.value.some((item) =>
-      item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+      item.name === filename && item.size === file.size && item.lastModified === file.lastModified
     ) || accepted.some((item) =>
-      item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+      item.name === filename && item.size === file.size && item.lastModified === file.lastModified
     )
     if (!duplicate) accepted.push(file)
   }
@@ -667,7 +667,60 @@ function handleFileChange(event) {
   attachments.value = [...attachments.value, ...accepted.slice(0, available)]
   if (rejected) pageError.value = copy.uploadUnsupported
   else if (accepted.length > available) pageError.value = '单次最多上传 10 个附件。'
-  else pageError.value = ''
+  else if (accepted.length) pageError.value = ''
+  nextTick(resizeComposer)
+}
+
+function handleFileChange(event) {
+  addAttachments(event.target.files)
+  event.target.value = ''
+}
+
+function handleComposerPaste(event) {
+  if (isSending.value || !event.clipboardData) return
+
+  const clipboard = event.clipboardData
+  const items = Array.from(clipboard.items || [])
+  let imageFiles = items
+    .filter((item) => item.kind === 'file' && /^image\/(png|jpeg)$/i.test(item.type || ''))
+    .map((item) => item.getAsFile())
+    .filter(Boolean)
+
+  if (!imageFiles.length) {
+    imageFiles = Array.from(clipboard.files || []).filter((file) =>
+      /^image\/(png|jpeg)$/i.test(file.type || '') || /\.(png|jpe?g)$/i.test(file.name || '')
+    )
+  }
+  if (!imageFiles.length) return
+
+  event.preventDefault()
+  const timestamp = new Date()
+  const stamp = [
+    timestamp.getFullYear(),
+    String(timestamp.getMonth() + 1).padStart(2, '0'),
+    String(timestamp.getDate()).padStart(2, '0'),
+    '-',
+    String(timestamp.getHours()).padStart(2, '0'),
+    String(timestamp.getMinutes()).padStart(2, '0'),
+    String(timestamp.getSeconds()).padStart(2, '0'),
+  ].join('')
+
+  const normalizedFiles = imageFiles.map((file, index) => {
+    const type = String(file.type || '').toLowerCase()
+    const extension = type === 'image/jpeg' || /\.jpe?g$/i.test(file.name || '') ? 'jpg' : 'png'
+    const originalName = String(file.name || '').trim()
+    const hasUsefulName = originalName && !/^(image|blob|clipboard)(\.[a-z0-9]+)?$/i.test(originalName)
+    const name = hasUsefulName && /\.(png|jpe?g)$/i.test(originalName)
+      ? originalName
+      : '截图-' + stamp + (imageFiles.length > 1 ? '-' + (index + 1) : '') + '.' + extension
+    try {
+      return new File([file], name, { type: type || (extension === 'jpg' ? 'image/jpeg' : 'image/png'), lastModified: Date.now() })
+    } catch {
+      return file
+    }
+  })
+
+  addAttachments(normalizedFiles)
 }
 
 function removeAttachment(index) {
@@ -944,6 +997,7 @@ onBeforeUnmount(() => {
             aria-controls="mention-suggestion-menu"
             @keydown="handleComposerKeydown"
             @input="handleComposerInput"
+            @paste="handleComposerPaste"
             @click="updateMentionMenu"
             @blur="closeMentionMenu"
           ></textarea>
