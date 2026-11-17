@@ -257,6 +257,17 @@ func (h *Handler) ssoIdentityFromRequest(r *http.Request) (middleware.Identity, 
 		return middleware.Identity{}, false
 	}
 	return middleware.Identity{
-		Username: claims.Subject, DisplayName: claims.Name, UserID: claims.UserID, Provider: requestIdentityProvider(r, claims.Provider), JTI: claims.JTI, Expires: claims.Expires,
+		Username: claims.Subject, DisplayName: claims.Name, UserID: claims.UserID, Provider: legacyAuthProvider(r, claims.Provider), JTI: claims.JTI, Expires: claims.Expires,
 	}, true
+}
+
+// Legacy tokens did not include a provider claim. Use the existing login-method cookie only for that case.
+func legacyAuthProvider(r *http.Request, provider string) string {
+	if provider != "" {
+		return provider
+	}
+	if cookie, err := r.Cookie("pingtai_auth_method"); err == nil && cookie.Value == "sso" {
+		return "sso"
+	}
+	return "local"
 }

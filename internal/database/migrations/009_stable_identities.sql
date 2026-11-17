@@ -21,7 +21,7 @@ SELECT 'local-' || id,'local',username,username,username,id,
 FROM ai_user;
 
 -- Older SSO-only conversations and knowledge permissions used the account name as the owner.
--- Their original provider cannot be inferred if a local account with the same name already existed;
+-- Their original provider cannot be inferred if a local account with the same name already existed,
 -- in that ambiguous legacy case the local identity is preferred. New sessions are provider-scoped.
 INSERT OR IGNORE INTO ai_identity (id,provider,subject,username,display_name,created_at,updated_at)
 SELECT 'sso-' || lower(hex(randomblob(16))),'sso',legacy.username,legacy.username,legacy.username,
@@ -31,7 +31,7 @@ FROM (
   UNION
   SELECT owner_username AS username FROM ai_knowledge_base_policy
   UNION
-  SELECT username FROM ai_knowledge_base_member
+  SELECT username FROM ai_knowledge_base_member WHERE username NOT LIKE 'sso:%'
   UNION
   SELECT created_by AS username FROM ai_knowledge_base
 ) AS legacy
@@ -48,7 +48,7 @@ SET user_id = (
 )
 WHERE EXISTS (SELECT 1 FROM ai_identity i WHERE i.username=ai_conversation.user_id);
 
--- Knowledge base ownership and membership are now identity based; legacy username tables
+-- Knowledge base ownership and membership are now identity based, legacy username tables
 -- remain as display/backward-compatibility data only.
 CREATE TABLE IF NOT EXISTS ai_knowledge_base_identity (
   base_id TEXT NOT NULL PRIMARY KEY,
@@ -83,4 +83,5 @@ SELECT m.base_id,
        (SELECT i.id FROM ai_identity i WHERE i.username=m.username
         ORDER BY CASE WHEN i.provider='local' THEN 0 ELSE 1 END LIMIT 1)
 FROM ai_knowledge_base_member m
-WHERE EXISTS (SELECT 1 FROM ai_identity i WHERE i.username=m.username);
+WHERE m.username NOT LIKE 'sso:%'
+  AND EXISTS (SELECT 1 FROM ai_identity i WHERE i.username=m.username);
