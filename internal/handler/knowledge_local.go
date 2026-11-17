@@ -28,8 +28,8 @@ import (
 var knowledgeHTMLTag = regexp.MustCompile("(?s)<[^>]*>")
 
 func (h *Handler) isKnowledgeAdmin(ctx context.Context, username string) bool {
-	if h.Config.SSOConfigured() {
-		return h.Config.IsSSOAdmin(username)
+	if h.Config.SSOConfigured() && h.Config.IsSSOAdmin(username) {
+		return true
 	}
 	if h.Users == nil {
 		return false

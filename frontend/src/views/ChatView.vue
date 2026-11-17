@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark.vue'
@@ -27,7 +27,7 @@ const conversationId = ref('')
 const messages = ref([])
 const conversations = ref([])
 const draft = ref('')
-const attachment = ref(null)
+const attachments = ref([])
 const isSending = ref(false)
 const isLoading = ref(false)
 const historyLoading = ref(false)
@@ -109,8 +109,7 @@ async function initialize() {
     username.value = profile.display_name || profile.account || '用户'
     isAdmin.value = Boolean(profile.is_admin)
     localStorage.setItem('username', username.value)
-    const auth = assertSuccess(await api.get('/auth/mode', undefined, { auth: false }))
-    authMode.value = auth.mode || 'local'
+    authMode.value = profile.auth_method || 'local'
     await loadModels()
     await loadKnowledgeBases()
     await loadConversationHistory()
@@ -279,6 +278,7 @@ async function openConversation(item) {
   if (isSending.value) return
   editingMessageId.value = ''
   draft.value = ''
+  attachments.value = []
   historyError.value = ''
   try {
     const data = assertSuccess(await api.post('/agents/getMessageList', {
@@ -332,7 +332,7 @@ async function clearCurrentConversation() {
     messages.value = []
     editingMessageId.value = ''
     draft.value = ''
-    attachment.value = null
+    attachments.value = []
     conversations.value = conversations.value.filter((item) => item.id !== conversationId.value)
     pageError.value = ''
     historyError.value = ''
@@ -352,7 +352,7 @@ async function clearAllHistory() {
     messages.value = []
     editingMessageId.value = ''
     draft.value = ''
-    attachment.value = null
+    attachments.value = []
     pageError.value = ''
     historyError.value = ''
     scrollToBottom()
@@ -377,7 +377,7 @@ async function sendMessage(text = draft.value, options = {}) {
     return
   }
   showNoProviderModal.value = false
-  const selectedFile = options.regenerate ? null : attachment.value
+  const selectedFiles = options.regenerate ? [] : attachments.value.slice()
   if (!conversationId.value) {
     try { await createConversation() } catch (error) {
       pageError.value = error?.message || copy.noConversation
@@ -410,7 +410,7 @@ async function sendMessage(text = draft.value, options = {}) {
     id: 'assistant-' + Date.now(), role: 'assistant', content: '', reasoning_content: '',
     pending: true, stopped: false,
   }) - 1
-  if (!options.regenerate) { draft.value = ''; attachment.value = null }
+  if (!options.regenerate) { draft.value = ''; attachments.value = []; nextTick(resizeComposer) }
   scrollToBottom()
   const controller = new AbortController()
   activeRequestController = controller
@@ -424,9 +424,8 @@ async function sendMessage(text = draft.value, options = {}) {
     form.append('stream', '1')
     form.append('content', content)
     form.append('knowledge_base_id', knowledgeEnabled.value ? selectedKnowledgeBaseId.value : '')
-    form.append('up_type', selectedFile ? (isImageFile(selectedFile) ? 'image' : 'file') : '')
     form.append('url', '')
-    if (selectedFile) form.append('file', selectedFile)
+    selectedFiles.forEach((file) => form.append('files', file))
     const response = await api.stream('/agents/chat', form, { signal: controller.signal, headers: { Accept: 'text/event-stream' } })
     const contentType = response.headers.get('content-type') || ''
     if (!contentType.includes('text/event-stream')) {
@@ -469,6 +468,9 @@ async function sendMessage(text = draft.value, options = {}) {
       await loadConversationHistory()
     }
   } catch (error) {
+    if (!options.regenerate && !stopRequested && selectedFiles.length && !attachments.value.length) {
+      attachments.value = selectedFiles
+    }
     const assistant = messages.value[assistantIndex]
     if (assistant) {
       assistant.pending = false
@@ -481,7 +483,7 @@ async function sendMessage(text = draft.value, options = {}) {
       const message = error?.message || copy.requestFailed
       if (message.includes('当前没有配置模型渠道')) {
         messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
-        if (!options.regenerate) { draft.value = content; attachment.value = selectedFile }
+        if (!options.regenerate) { draft.value = content; attachments.value = selectedFiles }
         showNoProviderModal.value = true
         pageError.value = ''
       } else pageError.value = message
@@ -494,27 +496,51 @@ async function sendMessage(text = draft.value, options = {}) {
   }
 }
 
+function resizeComposer() {
+  const input = composerInput.value
+  if (!input) return
+  input.style.height = 'auto'
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px'
+}
+
+watch(draft, () => nextTick(resizeComposer))
+
 function stopGeneration() {
   if (!activeRequestController || !isSending.value) return
   stopRequested = true
   activeRequestController.abort()
 }
 function handleFileChange(event) {
-  const file = event.target.files?.[0]
+  const selected = Array.from(event.target.files || [])
   event.target.value = ''
-  if (!file) return
-  const extension = file.name.split('.').pop().toLowerCase()
+  if (!selected.length) return
+
   const allowed = ['txt', 'jpg', 'jpeg', 'png']
-  if (!allowed.includes(extension)) {
-    pageError.value = copy.uploadUnsupported
-    return
+  const accepted = []
+  let rejected = false
+  for (const file of selected) {
+    const extension = file.name.split('.').pop().toLowerCase()
+    if (!allowed.includes(extension)) {
+      rejected = true
+      continue
+    }
+    const duplicate = attachments.value.some((item) =>
+      item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+    ) || accepted.some((item) =>
+      item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+    )
+    if (!duplicate) accepted.push(file)
   }
-  pageError.value = ''
-  attachment.value = file
+
+  const available = Math.max(0, 10 - attachments.value.length)
+  attachments.value = [...attachments.value, ...accepted.slice(0, available)]
+  if (rejected) pageError.value = copy.uploadUnsupported
+  else if (accepted.length > available) pageError.value = '单次最多上传 10 个附件。'
+  else pageError.value = ''
 }
 
-function removeAttachment() {
-  attachment.value = null
+function removeAttachment(index) {
+  attachments.value = attachments.value.filter((_, itemIndex) => itemIndex !== index)
 }
 
 function handleComposerKeydown(event) {
@@ -533,13 +559,13 @@ function beginEditMessage(index) {
   editingMessageId.value = String(message.id)
   draft.value = message.content || ''
   pageError.value = ''
-  nextTick(() => composerInput.value?.focus())
+  nextTick(() => { composerInput.value?.focus(); resizeComposer() })
 }
 
 function cancelEditMessage() {
   editingMessageId.value = ''
   draft.value = ''
-  nextTick(() => composerInput.value?.blur())
+  nextTick(() => { composerInput.value?.blur(); resizeComposer() })
 }
 
 function regenerateMessage(index) {
@@ -552,7 +578,7 @@ async function startNewConversation() {
   editingMessageId.value = ''
   messages.value = []
   draft.value = ''
-  attachment.value = null
+  attachments.value = []
   pageError.value = ''
   showHistoryDrawer.value = false
   conversationId.value = ''
@@ -665,10 +691,13 @@ onBeforeUnmount(() => {
           <span>正在编辑已发送的问题，重新发送后该消息之后的回答将被替换</span>
           <button type="button" :disabled="isSending" @click="cancelEditMessage">取消编辑</button>
         </div>
-        <div v-if="attachment" class="attachment-chip">
-          <span class="attachment-icon">&#128196;</span>
-          <span class="attachment-name">{{ attachment.name }}</span>
-          <button type="button" :aria-label="copy.removeFile" @click="removeAttachment">&times;</button>
+        <div v-if="attachments.length" class="attachment-list" aria-label="待发送附件">
+          <div v-for="(attachment, index) in attachments" :key="attachment.name + '-' + attachment.lastModified + '-' + index" class="attachment-chip">
+            <span class="attachment-icon">{{ isImageFile(attachment) ? '▧' : '▤' }}</span>
+            <span class="attachment-name">{{ attachment.name }}</span>
+            <small>{{ (attachment.size / 1024).toFixed(0) }} KB</small>
+            <button type="button" :aria-label="copy.removeFile" :disabled="isSending" @click="removeAttachment(index)">&times;</button>
+          </div>
         </div>
         <textarea
           ref="composerInput"
@@ -678,10 +707,11 @@ onBeforeUnmount(() => {
           :placeholder="copy.sendPlaceholder"
           :disabled="isSending"
           @keydown="handleComposerKeydown"
+          @input="resizeComposer"
         ></textarea>
         <div class="composer-actions">
           <label class="attach-button" :title="copy.attach">
-            <input type="file" accept=".txt,.jpg,.jpeg,.png" :disabled="isSending" @change="handleFileChange" />
+            <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
             <span aria-hidden="true">+</span>
           </label>
           <button v-if="isSending" class="stop-button" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><span></span>停止</button>

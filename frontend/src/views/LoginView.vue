@@ -7,7 +7,9 @@ import BrandMark from '../components/BrandMark.vue'
 const busy = ref(false)
 const loading = ref(true)
 const needsAdmin = ref(false)
-const authMode = ref('local')
+const localLoginEnabled = ref(true)
+const ssoLoginEnabled = ref(false)
+const loginChoice = ref('')
 const ssoError = ref(false)
 const errorMessage = ref('')
 const username = ref('')
@@ -24,13 +26,18 @@ async function loadBootstrapStatus() {
     ssoError.value = new URLSearchParams(window.location.search).get('sso_error') === '1'
     if (!needsAdmin.value) {
       const modeResult = await api.get('/auth/mode', undefined, { auth: false })
-      authMode.value = modeResult?.data?.mode || 'local'
-      if (authMode.value === 'sso' && !ssoError.value) {
-        window.location.replace('/auth/sso/login')
-        return
-      }
-      if (authMode.value === 'sso' && ssoError.value) {
+      const auth = modeResult?.data || {}
+      localLoginEnabled.value = auth.local_login_enabled !== false
+      ssoLoginEnabled.value = Boolean(auth.sso_login_enabled)
+      if (!localLoginEnabled.value && !ssoLoginEnabled.value) {
+        errorMessage.value = '平台暂未启用任何登录方式，请联系管理员。'
+      } else if (ssoError.value && ssoLoginEnabled.value) {
+        loginChoice.value = localLoginEnabled.value ? 'sso' : ''
         errorMessage.value = '学校统一身份认证未完成，请检查学校账号状态或联系管理员。'
+      } else if (!localLoginEnabled.value && ssoLoginEnabled.value) {
+        loginChoice.value = 'sso'
+      } else if (localLoginEnabled.value && !ssoLoginEnabled.value) {
+        loginChoice.value = 'local'
       }
     }
   } catch (error) {
@@ -40,13 +47,28 @@ async function loadBootstrapStatus() {
   }
 }
 
+function chooseLogin(method) {
+  loginChoice.value = method
+  errorMessage.value = ''
+}
+
+function backToLoginChoices() {
+  loginChoice.value = ''
+  errorMessage.value = ''
+}
+
 function startSSO() {
+  if (!ssoLoginEnabled.value) return
   window.location.assign('/auth/sso/login')
 }
 
 async function submit(event) {
   event.preventDefault()
   if (busy.value) return
+  if (!needsAdmin.value && !localLoginEnabled.value) {
+    errorMessage.value = '平台账户密码登录未启用，请返回选择其他登录方式。'
+    return
+  }
   const account = username.value.trim()
   if (!account || !password.value) {
     errorMessage.value = '请输入账号和密码。'
@@ -102,7 +124,20 @@ onMounted(loadBootstrapStatus)
       <p v-if="errorMessage" class="form-error" role="alert">{{ errorMessage }}</p>
       <p v-if="loading" class="login-subtitle">{{ copy.loading }}</p>
 
-      <form v-else-if="authMode !== 'sso'" class="login-form" @submit="submit">
+      <div v-if="!loading && !needsAdmin && localLoginEnabled && ssoLoginEnabled && !loginChoice" class="login-method-choices">
+        <button class="login-method-card" type="button" @click="chooseLogin('local')">
+          <span class="login-method-icon">账号</span>
+          <span><strong>平台账户登录</strong><small>使用管理员分配的账号和密码</small></span>
+          <span class="login-method-arrow">›</span>
+        </button>
+        <button class="login-method-card" type="button" @click="chooseLogin('sso')">
+          <span class="login-method-icon sso">SSO</span>
+          <span><strong>学校统一身份认证</strong><small>使用学校统一身份认证账号登录</small></span>
+          <span class="login-method-arrow">›</span>
+        </button>
+      </div>
+
+      <form v-else-if="needsAdmin || (localLoginEnabled && (!ssoLoginEnabled || loginChoice === 'local'))" class="login-form" @submit="submit">
         <label class="field-label" for="username">{{ copy.username }}</label>
         <input id="username" v-model="username" name="username" class="login-input"
           autocomplete="username" :placeholder="copy.usernamePlaceholder" maxlength="50" required />
@@ -124,13 +159,15 @@ onMounted(loadBootstrapStatus)
         </button>
       </form>
 
-      <div v-if="!loading && !needsAdmin && authMode === 'sso'" class="login-sso-actions">
-        <p>平台已启用学校统一身份认证。点击下方按钮前往学校认证中心，登录成功后将自动进入对话。</p>
+      <div v-if="!loading && !needsAdmin && ssoLoginEnabled && (!localLoginEnabled || loginChoice === 'sso')" class="login-sso-actions">
+        <p>使用学校统一身份认证登录，认证成功后将自动进入对话。</p>
         <button class="login-submit" type="button" @click="startSSO">前往学校统一身份认证</button>
+        <button v-if="localLoginEnabled" class="login-method-back" type="button" @click="backToLoginChoices">返回选择登录方式</button>
       </div>
+      <button v-if="!loading && !needsAdmin && localLoginEnabled && ssoLoginEnabled && loginChoice === 'local'" class="login-method-back" type="button" @click="backToLoginChoices">返回选择登录方式</button>
 
       <div class="agreement-row">
-        <span>{{ needsAdmin ? '首个注册账户自动成为管理员；后续账户由管理员创建。' : (authMode === 'sso' ? '登录状态由学校统一身份认证平台管理。' : '账号由平台管理员创建和管理。') }}</span>
+        <span>{{ needsAdmin ? '首个注册账户自动成为管理员；后续账户由管理员创建。' : (localLoginEnabled && ssoLoginEnabled ? '可在首页选择平台账户登录或学校统一身份认证。' : (ssoLoginEnabled ? '登录状态由学校统一身份认证平台管理。' : '账号由平台管理员创建和管理。')) }}</span>
       </div>
     </section>
     <p class="login-footer">{{ copy.appName }}</p>

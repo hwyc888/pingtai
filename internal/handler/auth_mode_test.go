@@ -16,7 +16,7 @@ func TestAuthModeReportsConfiguredMode(t *testing.T) {
 		want string
 	}{
 		{name: "default local", mode: "local", want: "local"},
-		{name: "sso", mode: "sso", want: "sso"},
+		{name: "sso with local retained", mode: "sso", want: "multi"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := config.Defaults()

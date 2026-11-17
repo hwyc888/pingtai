@@ -12,7 +12,9 @@ func (h *Handler) GetAuthSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0,
 		"data": map[string]any{
-			"mode": h.Config.AuthMode,
+			"mode": h.Config.LoginMode(),
+			"local_login_enabled": h.Config.LocalLoginEnabled,
+			"sso_login_enabled": h.Config.SSOConfigured(),
 			"sso_base_url": h.Config.SSOBaseURL,
 			"sso_service_url": h.Config.SSOServiceURL,
 			"sso_client_id": h.Config.SSOClientID,
@@ -30,8 +32,24 @@ func (h *Handler) SaveAuthSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := *h.Config
-	if value := strings.TrimSpace(stringValue(payload["mode"])); value != "" {
-		next.AuthMode = strings.ToLower(value)
+	legacyMode := strings.ToLower(strings.TrimSpace(stringValue(payload["mode"])))
+	if value, exists := payload["local_login_enabled"]; exists {
+		next.LocalLoginEnabled = boolFromValue(value, next.LocalLoginEnabled)
+	} else if legacyMode != "" {
+		next.LocalLoginEnabled = legacyMode != "sso"
+	}
+	if value, exists := payload["sso_login_enabled"]; exists {
+		next.SSOLoginEnabled = boolFromValue(value, next.SSOLoginEnabled)
+	} else if legacyMode != "" {
+		next.SSOLoginEnabled = legacyMode == "sso" || legacyMode == "multi"
+	}
+	next.AuthMode = "local"
+	if next.SSOLoginEnabled {
+		if next.LocalLoginEnabled {
+			next.AuthMode = "multi"
+		} else {
+			next.AuthMode = "sso"
+		}
 	}
 	if value := strings.TrimSpace(stringValue(payload["sso_base_url"])); value != "" {
 		next.SSOBaseURL = strings.TrimRight(value, "/")
@@ -54,11 +72,11 @@ func (h *Handler) SaveAuthSettings(w http.ResponseWriter, r *http.Request) {
 	if next.SSOBaseURL == "" {
 		next.SSOBaseURL = "https://ids.zcvc.cn/cas"
 	}
-	if next.AuthMode != "local" && next.AuthMode != "sso" {
+	if next.AuthMode != "local" && next.AuthMode != "sso" && next.AuthMode != "multi" {
 		writeError(w, http.StatusBadRequest, "登录方式必须是账户登录或学校统一身份认证")
 		return
 	}
-	if next.AuthMode == "sso" {
+	if next.SSOLoginEnabled || next.AuthMode == "sso" || next.AuthMode == "multi" {
 		if !next.SSOSettingsComplete() {
 			writeError(w, http.StatusBadRequest, "请完整填写 CAS 地址、Client ID、Client Secret 和回调地址")
 			return
@@ -98,7 +116,9 @@ func (h *Handler) SaveAuthSettings(w http.ResponseWriter, r *http.Request) {
 		"code": 0,
 		"msg": "登录设置已保存",
 		"data": map[string]any{
-			"mode": next.AuthMode,
+			"mode": next.LoginMode(),
+			"local_login_enabled": next.LocalLoginEnabled,
+			"sso_login_enabled": next.SSOConfigured(),
 			"has_client_secret": strings.TrimSpace(next.SSOClientSecret) != "",
 		},
 	})

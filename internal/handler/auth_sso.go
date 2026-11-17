@@ -92,7 +92,7 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
 		return
 	}
-	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken, h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https"))
+	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken, "sso", h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https"))
 	http.Redirect(w, r, returnTo, http.StatusSeeOther)
 }
 
@@ -123,11 +123,16 @@ func (h *Handler) CurrentUser(w http.ResponseWriter, r *http.Request) {
 	if displayName == "" {
 		displayName = identity.Username
 	}
+	authMethod := "local"
+	if cookie, err := r.Cookie("pingtai_auth_method"); err == nil && cookie.Value == "sso" {
+		authMethod = "sso"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0, "msg": "success",
 		"data": map[string]any{
 			"account": identity.Username,
 			"display_name": displayName,
+			"auth_method": authMethod,
 			"is_admin": h.isAdministrator(r, identity.Username),
 		},
 	})
@@ -154,7 +159,7 @@ func (h *Handler) ssoSecure() bool {
 	return err == nil && strings.EqualFold(redirect.Scheme, "https")
 }
 
-func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken, providerRefreshToken string, secure bool) {
+func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToken, providerRefreshToken, authMethod string, secure bool) {
 	now := time.Now()
 	accessTTL := h.Config.AccessTokenTTL
 	if accessTTL <= 0 {
@@ -182,16 +187,26 @@ func (h *Handler) setAuthCookies(w http.ResponseWriter, accessToken, refreshToke
 			Expires: now.Add(refreshTTL), MaxAge: int(refreshTTL.Seconds()),
 			HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
 		})
+	} else {
+		http.SetCookie(w, &http.Cookie{
+			Name: "SSORefreshToken", Value: "", Path: "/", MaxAge: -1,
+			Expires: time.Unix(1, 0), HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+		})
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name: signedInCookie, Value: "1", Path: "/",
 		Expires: now.Add(refreshTTL), MaxAge: int(refreshTTL.Seconds()),
 		Secure: secure, SameSite: http.SameSiteLaxMode,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name: "pingtai_auth_method", Value: authMethod, Path: "/",
+		Expires: now.Add(refreshTTL), MaxAge: int(refreshTTL.Seconds()),
+		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func clearAuthCookies(w http.ResponseWriter, secure bool) {
-	for _, name := range []string{"Authorization", "RefreshToken", "SSORefreshToken", signedInCookie} {
+	for _, name := range []string{"Authorization", "RefreshToken", "SSORefreshToken", "pingtai_auth_method", signedInCookie} {
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", MaxAge: -1,
 			Expires: time.Unix(1, 0), HttpOnly: name != signedInCookie,

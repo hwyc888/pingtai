@@ -36,7 +36,7 @@ func TestAuthSettingsRoundTripThroughSQLite(t *testing.T) {
 	if err := LoadAuthSettings(context.Background(), db, &loaded); err != nil {
 		t.Fatal(err)
 	}
-	if loaded.AuthMode != "sso" || loaded.SSOBaseURL != cfg.SSOBaseURL ||
+	if loaded.LoginMode() != "multi" || !loaded.LocalLoginEnabled || !loaded.SSOLoginEnabled || loaded.SSOBaseURL != cfg.SSOBaseURL ||
 		loaded.SSOServiceURL != cfg.SSOServiceURL || loaded.SSOClientID != cfg.SSOClientID ||
 		loaded.SSOClientSecret != cfg.SSOClientSecret || loaded.SSORedirectURL != cfg.SSORedirectURL ||
 		loaded.SSOAdminAccounts != cfg.SSOAdminAccounts {

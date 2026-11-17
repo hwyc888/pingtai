@@ -1,16 +1,15 @@
 package handler
 
-import (
-	"net/http"
-)
+import "net/http"
 
 func (h *Handler) AuthMode(w http.ResponseWriter, r *http.Request) {
-	mode := "local"
-	if h.Config.SSOConfigured() {
-		mode = "sso"
-	}
+	mode := h.Config.LoginMode()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0,
-		"data": map[string]string{"mode": mode},
+		"data": map[string]any{
+			"mode": mode,
+			"local_login_enabled": h.Config.LocalLoginEnabled,
+			"sso_login_enabled": h.Config.SSOConfigured(),
+		},
 	})
 }

@@ -45,36 +45,53 @@ func (h *Handler) chatCoze(w http.ResponseWriter, r *http.Request) {
 		"bot_id": botID, "user_id": identity.Username,
 		"stream": stream, "auto_save_history": true,
 	}
-	file, header, fileErr := r.FormFile("file")
-	if fileErr == nil {
-		defer file.Close()
+	files := requestChatFiles(r)
+	if len(files) > 10 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": 400, "msg": "单次最多上传 10 个附件"})
+		return
 	}
 	imageURL := strings.TrimSpace(r.FormValue("url"))
-	if imageURL == "" && fileErr != nil {
+	if imageURL == "" && len(files) == 0 {
 		payload["additional_messages"] = []map[string]any{{
 			"role": "user", "content_type": "text", "content": content,
 		}}
 	} else {
-		upType := r.FormValue("up_type")
-		if upType != "image" && upType != "file" {
-			writeJSON(w, http.StatusOK, map[string]any{"code": 500, "msg": "缺少或不支持上传类型参数"})
-			return
-		}
-		attachment := map[string]any{"type": upType}
+		attachments := make([]any, 0, len(files)+1)
 		if imageURL != "" {
-			attachment["file_url"] = imageURL
-		} else {
-			fileID, err := h.uploadCozeFile(r.Context(), file, header)
-			if err != nil {
-				writeJSON(w, http.StatusOK, map[string]any{"code": 500, "msg": "上传文件失败: " + err.Error()})
+			upType := r.FormValue("up_type")
+			if upType != "image" {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"code": 400, "msg": "远程附件链接目前只支持图片"})
 				return
 			}
-			attachment["file_id"] = fileID
+			attachments = append(attachments, map[string]any{"type": "image", "file_url": imageURL})
 		}
-		objectContent, _ := json.Marshal([]any{
-			attachment,
-			map[string]any{"type": "text", "text": content},
-		})
+		for _, header := range files {
+			if header == nil {
+				continue
+			}
+			file, openErr := header.Open()
+			if openErr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"code": 400, "msg": "读取附件失败: " + openErr.Error()})
+				return
+			}
+			fileID, uploadErr := h.uploadCozeFile(r.Context(), file, header)
+			_ = file.Close()
+			if uploadErr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"code": 400, "msg": "上传文件失败: " + uploadErr.Error()})
+				return
+			}
+			kind := "file"
+			if isKnowledgeImageFilename(header.Filename) {
+				kind = "image"
+			}
+			attachments = append(attachments, map[string]any{"type": kind, "file_id": fileID})
+		}
+		objectParts := append(attachments, map[string]any{"type": "text", "text": content})
+		objectContent, marshalErr := json.Marshal(objectParts)
+		if marshalErr != nil {
+			writeError(w, http.StatusInternalServerError, "序列化附件内容失败")
+			return
+		}
 		payload["additional_messages"] = []map[string]any{{
 			"role": "user", "content_type": "object_string", "content": string(objectContent),
 		}}
@@ -285,55 +302,76 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) buildModelUserContent(r *http.Request, content string) (any, string, error) {
 	imageURL := strings.TrimSpace(r.FormValue("url"))
-	file, header, fileErr := r.FormFile("file")
-	if fileErr == nil {
-		defer file.Close()
+	files := requestChatFiles(r)
+	if len(files) > 10 {
+		return nil, "", errors.New("单次最多上传 10 个附件")
 	}
-	upType := r.FormValue("up_type")
-	if imageURL == "" && fileErr != nil {
+	if imageURL == "" && len(files) == 0 {
 		return content, content, nil
 	}
-	if upType == "image" {
-		imageSource := imageURL
-		if imageSource == "" {
-			data, err := io.ReadAll(io.LimitReader(file, h.Config.MaxUploadBytes+1))
-			if err != nil {
-				return nil, "", err
-			}
-			if int64(len(data)) > h.Config.MaxUploadBytes {
-				return nil, "", errors.New("图片超过大小限制")
-			}
-			extension := strings.ToLower(filepath.Ext(header.Filename))
-			contentType := mime.TypeByExtension(extension)
-			if !strings.HasPrefix(contentType, "image/") {
-				return nil, "", errors.New("图片格式不受支持")
-			}
-			imageSource = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
+
+	var textContent strings.Builder
+	textContent.WriteString(content)
+	imageParts := make([]map[string]any, 0)
+	if imageURL != "" {
+		if r.FormValue("up_type") != "image" {
+			return nil, "", errors.New("远程附件链接目前只支持图片")
 		}
-		parts := []map[string]any{
-			{"type": "text", "text": content},
-			{"type": "image_url", "image_url": map[string]any{"url": imageSource}},
-		}
-		return parts, content + " [图片附件]", nil
+		imageParts = append(imageParts, map[string]any{
+			"type": "image_url", "image_url": map[string]any{"url": imageURL},
+		})
+		textContent.WriteString(" [图片附件]")
 	}
-	if upType == "file" {
-		if fileErr != nil {
-			return nil, "", errors.New("模型直连模式下文件链接暂不支持，请上传 TXT 文件或切换 CHAT_PROVIDER=coze")
+
+	for _, header := range files {
+		if header == nil {
+			continue
 		}
-		if strings.ToLower(filepath.Ext(header.Filename)) != ".txt" {
-			return nil, "", errors.New("模型直连模式目前支持 TXT 文件；PDF/DOC 文件请使用 Coze 模式")
-		}
-		data, err := io.ReadAll(io.LimitReader(file, h.Config.MaxUploadBytes+1))
+		file, err := header.Open()
 		if err != nil {
-			return nil, "", err
+			return nil, "", errors.New("读取附件失败: " + err.Error())
+		}
+		data, readErr := io.ReadAll(io.LimitReader(file, h.Config.MaxUploadBytes+1))
+		_ = file.Close()
+		if readErr != nil {
+			return nil, "", readErr
 		}
 		if int64(len(data)) > h.Config.MaxUploadBytes {
-			return nil, "", errors.New("文件超过大小限制")
+			return nil, "", errors.New("附件超过大小限制: " + header.Filename)
 		}
-		text := content + "\n\n附件 " + header.Filename + "：\n" + string(data)
-		return text, text, nil
+
+		extension := strings.ToLower(filepath.Ext(header.Filename))
+		if isKnowledgeImageFilename(header.Filename) {
+			contentType := mime.TypeByExtension(extension)
+			if !strings.HasPrefix(contentType, "image/") {
+				return nil, "", errors.New("图片格式不受支持: " + header.Filename)
+			}
+			imageSource := "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
+			imageParts = append(imageParts, map[string]any{
+				"type": "image_url", "image_url": map[string]any{"url": imageSource},
+			})
+			textContent.WriteString("\n[图片附件: ")
+			textContent.WriteString(header.Filename)
+			textContent.WriteString("]")
+			continue
+		}
+		if extension != ".txt" {
+			return nil, "", errors.New("模型直连模式目前支持 TXT 和 JPG/PNG 图片: " + header.Filename)
+		}
+		textContent.WriteString("\n\n附件 ")
+		textContent.WriteString(header.Filename)
+		textContent.WriteString("：\n")
+		textContent.Write(data)
 	}
-	return nil, "", errors.New("缺少或不支持上传类型参数")
+
+	storedContent := textContent.String()
+	if len(imageParts) == 0 {
+		return storedContent, storedContent, nil
+	}
+	parts := make([]map[string]any, 0, len(imageParts)+1)
+	parts = append(parts, map[string]any{"type": "text", "text": storedContent})
+	parts = append(parts, imageParts...)
+	return parts, storedContent, nil
 }
 
 func parseModelAnswer(body []byte) (string, string, error) {

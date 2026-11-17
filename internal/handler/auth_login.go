@@ -10,8 +10,8 @@ import (
 )
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	if h.Config.SSOConfigured() {
-		writeJSON(w, http.StatusForbidden, map[string]any{"errcode": 403, "errmsg": "当前已启用学校统一身份认证，请使用学校账号登录"})
+	if !h.Config.LocalLoginEnabled {
+		writeJSON(w, http.StatusForbidden, map[string]any{"errcode": 403, "errmsg": "平台账户密码登录未启用，请返回登录方式选择页面"})
 		return
 	}
 	if !h.parseForm(w, r) {
@@ -38,7 +38,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secure := h.requestSecure(r)
-	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, "", secure)
+	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, "", "local", secure)
 	bindWX := 0
 	if user.OpenID != "" {
 		bindWX = 1

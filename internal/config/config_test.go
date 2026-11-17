@@ -61,3 +61,38 @@ func TestModelContextTokensCannotBeNegative(t *testing.T) {
 		t.Fatal("negative model context metadata must be rejected")
 	}
 }
+
+
+func TestMultipleLoginMethodsCanBeEnabledTogether(t *testing.T) {
+	cfg := Defaults()
+	cfg.JWTSecret = strings.Repeat("s", 40)
+	cfg.AuthMode = "multi"
+	cfg.LocalLoginEnabled = true
+	cfg.SSOLoginEnabled = true
+	cfg.SSOClientID = "client"
+	cfg.SSOClientSecret = "secret"
+	cfg.SSORedirectURL = "https://platform.example/auth/sso/callback"
+	cfg.SSOServiceURL = "https://platform.example/"
+	cfg.SSOAdminAccounts = "school-admin"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("both login methods should be valid: %v", err)
+	}
+	if cfg.LoginMode() != "multi" || !cfg.SSOConfigured() {
+		t.Fatalf("both methods should be reported as enabled: %#v", cfg)
+	}
+
+	cfg.LocalLoginEnabled = false
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("SSO-only mode should remain valid: %v", err)
+	}
+	if cfg.LoginMode() != "sso" {
+		t.Fatalf("expected SSO-only mode, got %q", cfg.LoginMode())
+	}
+
+	cfg.SSOLoginEnabled = false
+	cfg.AuthMode = "local"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("disabling both login methods must be rejected")
+	}
+}

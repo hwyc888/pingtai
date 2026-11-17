@@ -16,6 +16,8 @@ const resetPassword = ref('')
 
 const settings = reactive({
   mode: 'local',
+  local_login_enabled: true,
+  sso_login_enabled: false,
   sso_base_url: 'https://ids.zcvc.cn/cas',
   sso_service_url: window.location.origin + '/',
   sso_client_id: '',
@@ -54,6 +56,8 @@ async function load() {
     ])
     const data = assertSettings(authResult)
     settings.mode = data.mode || 'local'
+    settings.local_login_enabled = data.local_login_enabled !== false
+    settings.sso_login_enabled = Boolean(data.sso_login_enabled)
     settings.sso_base_url = data.sso_base_url || 'https://ids.zcvc.cn/cas'
     settings.sso_service_url = data.sso_service_url || window.location.origin + '/'
     settings.sso_client_id = data.sso_client_id || ''
@@ -73,8 +77,16 @@ async function saveSettings() {
   errorMessage.value = ''
   successMessage.value = ''
   try {
+    if (!settings.local_login_enabled && !settings.sso_login_enabled) {
+      throw new Error('至少启用一种登录方式。')
+    }
+    settings.mode = settings.local_login_enabled && settings.sso_login_enabled
+      ? 'multi'
+      : settings.sso_login_enabled ? 'sso' : 'local'
     const data = assertSettings(await api.post('/admin/auth-settings', {
       mode: settings.mode,
+      local_login_enabled: settings.local_login_enabled,
+      sso_login_enabled: settings.sso_login_enabled,
       sso_base_url: settings.sso_base_url.trim(),
       sso_service_url: settings.sso_service_url.trim(),
       sso_client_id: settings.sso_client_id.trim(),
@@ -84,9 +96,11 @@ async function saveSettings() {
     }))
     settings.sso_client_secret = ''
     settings.has_client_secret = Boolean(data.has_client_secret)
-    successMessage.value = settings.mode === 'sso'
-      ? '学校统一身份认证已启用。当前管理员会话保持有效，后续未登录访问将自动跳转到学校认证中心。'
-      : '账户密码登录已启用。'
+    successMessage.value = settings.local_login_enabled && settings.sso_login_enabled
+      ? '平台账户密码和学校统一身份认证均已启用，用户可在登录首页自行选择。'
+      : settings.sso_login_enabled
+        ? '已启用学校统一身份认证。用户可在登录首页前往学校认证中心。'
+        : '已启用平台账户密码登录。'
   } catch (error) {
     errorMessage.value = error?.message || '保存登录设置失败'
   } finally {
@@ -173,22 +187,23 @@ onMounted(load)
             <h2>登录方式</h2>
             <p>选择平台使用本地账户认证，或接入漳州城市职业学院统一身份认证平台。</p>
           </div>
-          <span class="admin-mode">{{ settings.mode === 'sso' ? '学校统一认证' : '账户密码登录' }}</span>
+          <span class="admin-mode">{{ settings.local_login_enabled && settings.sso_login_enabled ? '双登录方式' : (settings.sso_login_enabled ? '学校统一认证' : '账户密码登录') }}</span>
         </div>
 
         <form @submit.prevent="saveSettings">
           <div class="login-mode-options">
-            <label class="login-mode-option" :class="{ active: settings.mode === 'local' }">
-              <input v-model="settings.mode" type="radio" value="local" />
-              <span><strong>平台账户登录</strong><small>使用管理员创建的本地账号和密码。</small></span>
+            <label class="login-mode-option" :class="{ active: settings.local_login_enabled }">
+              <input v-model="settings.local_login_enabled" type="checkbox" />
+              <span><strong>平台账户密码登录</strong><small>允许使用管理员创建的本地账号和密码。</small></span>
             </label>
-            <label class="login-mode-option" :class="{ active: settings.mode === 'sso' }">
-              <input v-model="settings.mode" type="radio" value="sso" />
-              <span><strong>学校统一身份认证</strong><small>访问平台时自动跳转学校认证中心，认证成功后进入对话。</small></span>
+            <label class="login-mode-option" :class="{ active: settings.sso_login_enabled }">
+              <input v-model="settings.sso_login_enabled" type="checkbox" />
+              <span><strong>学校统一身份认证</strong><small>允许用户从登录首页选择学校统一身份认证。</small></span>
             </label>
           </div>
+          <p class="admin-note">两种方式可以同时启用。用户访问首页后自行选择登录方式；至少需要启用一种方式。</p>
 
-          <div v-if="settings.mode === 'sso'" class="login-settings-grid">
+          <div v-if="settings.sso_login_enabled" class="login-settings-grid">
             <label>CAS 服务地址
               <input v-model="settings.sso_base_url" type="url" placeholder="https://ids.zcvc.cn/cas" required />
             </label>
@@ -210,10 +225,10 @@ onMounted(load)
             </label>
           </div>
 
-          <p v-if="settings.mode === 'sso'" class="admin-note">
-            接入方式采用 PDF 文档中的 OAuth2 授权码模式。请先向学校管理员登记应用访问地址和回调地址；回调地址必须与登记信息完全一致。学校管理员账号应填写统一身份认证返回的账号标识。切换后，未登录用户会自动跳转到学校统一身份认证中心。
+          <p v-if="settings.sso_login_enabled" class="admin-note">
+            接入方式采用 PDF 文档中的 OAuth2 授权码模式。请先向学校管理员登记应用访问地址和回调地址；回调地址必须与登记信息完全一致。学校管理员账号应填写统一身份认证返回的账号标识。启用后，用户可在登录首页自行选择学校统一身份认证。
           </p>
-          <p v-else class="admin-note">本地账户仍保留在平台中。切换到学校统一身份认证后，本地账号密码登录将暂时停用，不会删除已有账号。</p>
+          <p v-else class="admin-note">本地账户由平台管理员创建和管理。关闭学校统一身份认证不会删除已配置的 SSO 信息；关闭本地登录也不会删除已有账号。</p>
 
           <div class="admin-row-actions login-settings-actions">
             <button class="admin-primary" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存登录设置' }}</button>
@@ -225,7 +240,7 @@ onMounted(load)
         <div class="admin-card-heading">
           <div>
             <h2>本地账户管理</h2>
-            <p>共 {{ total }} 个本地账号。启用学校统一认证时，这些账号不会用于登录，但不会被删除。</p>
+            <p>共 {{ total }} 个本地账号。是否允许本地账号登录由上方开关控制，关闭登录不会删除账号。</p>
           </div>
           <button class="admin-secondary" type="button" :disabled="saving" @click="loadUsers">刷新</button>
         </div>

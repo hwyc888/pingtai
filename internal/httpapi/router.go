@@ -42,13 +42,23 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.HandleFunc("POST /auth/logout", h.Logout)
 
 	admin := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cfg.SSOConfigured() {
-				middleware.RequireAdminAccounts(h.Auth.Tokens(), cfg.SSOAdminAccounts, next).ServeHTTP(w, r)
+		return middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			identity, ok := middleware.IdentityFromContext(r.Context())
+			if !ok {
+				writeHealth(w, http.StatusUnauthorized, map[string]any{"code": 401, "msg": "登录状态已失效"})
 				return
 			}
-			middleware.RequireAdmin(h.Auth.Tokens(), h.Users, next).ServeHTTP(w, r)
-		})
+			isAdmin := h.Config.SSOConfigured() && h.Config.IsSSOAdmin(identity.Username)
+			if !isAdmin && h.Users != nil {
+				user, err := h.Users.FindByUsername(r.Context(), identity.Username)
+				isAdmin = err == nil && user.UserType == 1 && user.Status == 1 && user.DelTag == 0
+			}
+			if !isAdmin {
+				writeHealth(w, http.StatusForbidden, map[string]any{"code": 403, "msg": "权限受限，非管理员用户"})
+				return
+			}
+			next.ServeHTTP(w, r)
+		}))
 	}
 	api.Handle("POST /auth/addUser", admin(http.HandlerFunc(h.AddUser)))
 	api.Handle("POST /auth/delUser", admin(http.HandlerFunc(h.DeleteUser)))

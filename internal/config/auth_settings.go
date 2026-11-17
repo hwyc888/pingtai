@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"database/sql"
+	"strconv"
 )
 
 type authSetting struct {
@@ -11,11 +12,14 @@ type authSetting struct {
 }
 
 func LoadAuthSettings(ctx context.Context, db *sql.DB, cfg *Config) error {
-	rows, err := db.QueryContext(ctx, "SELECT setting_key, setting_value FROM ai_platform_setting WHERE setting_key IN ('auth_mode','sso_base_url','sso_service_url','sso_client_id','sso_client_secret','sso_redirect_url','sso_admin_accounts')")
+	rows, err := db.QueryContext(ctx, "SELECT setting_key, setting_value FROM ai_platform_setting WHERE setting_key IN ('auth_mode','local_login_enabled','sso_login_enabled','sso_base_url','sso_service_url','sso_client_id','sso_client_secret','sso_redirect_url','sso_admin_accounts')")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
+
+	localSeen := false
+	ssoSeen := false
 	for rows.Next() {
 		var key, value string
 		if err := rows.Scan(&key, &value); err != nil {
@@ -24,6 +28,20 @@ func LoadAuthSettings(ctx context.Context, db *sql.DB, cfg *Config) error {
 		switch key {
 		case "auth_mode":
 			cfg.AuthMode = value
+		case "local_login_enabled":
+			enabled, parseErr := strconv.ParseBool(value)
+			if parseErr != nil {
+				return parseErr
+			}
+			cfg.LocalLoginEnabled = enabled
+			localSeen = true
+		case "sso_login_enabled":
+			enabled, parseErr := strconv.ParseBool(value)
+			if parseErr != nil {
+				return parseErr
+			}
+			cfg.SSOLoginEnabled = enabled
+			ssoSeen = true
 		case "sso_base_url":
 			cfg.SSOBaseURL = value
 		case "sso_service_url":
@@ -38,12 +56,26 @@ func LoadAuthSettings(ctx context.Context, db *sql.DB, cfg *Config) error {
 			cfg.SSOAdminAccounts = value
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	// Old installations stored only auth_mode. Keep local accounts available
+	// while migrating an old SSO-only setting to the new selectable login page.
+	if !localSeen {
+		cfg.LocalLoginEnabled = true
+	}
+	if !ssoSeen {
+		cfg.SSOLoginEnabled = cfg.AuthMode == "sso" || cfg.AuthMode == "multi"
+	}
+	cfg.AuthMode = cfg.LoginMode()
+	return nil
 }
 
 func SaveAuthSettings(ctx context.Context, db *sql.DB, cfg Config) error {
 	settings := []authSetting{
-		{key: "auth_mode", value: cfg.AuthMode},
+		{key: "auth_mode", value: cfg.LoginMode()},
+		{key: "local_login_enabled", value: strconv.FormatBool(cfg.LocalLoginEnabled)},
+		{key: "sso_login_enabled", value: strconv.FormatBool(cfg.SSOConfigured())},
 		{key: "sso_base_url", value: cfg.SSOBaseURL},
 		{key: "sso_service_url", value: cfg.SSOServiceURL},
 		{key: "sso_client_id", value: cfg.SSOClientID},

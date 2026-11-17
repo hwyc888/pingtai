@@ -12,6 +12,8 @@ import (
 type Config struct {
 	Addr               string
 	AuthMode           string
+	LocalLoginEnabled  bool
+	SSOLoginEnabled    bool
 	DatabasePath       string
 	SSOBaseURL         string
 	SSOServiceURL      string
@@ -68,6 +70,18 @@ func Load() (Config, error) {
 
 
 	workspaceID := env("COZE_WORKSPACE_ID", "7481824441182617636")
+	loginMode := strings.ToLower(env("AUTH_MODE", "local"))
+	localLoginEnabled := envBool("LOCAL_LOGIN_ENABLED", true)
+	ssoLoginEnabled := envBool("SSO_LOGIN_ENABLED", loginMode == "sso" || loginMode == "multi")
+	if ssoLoginEnabled {
+		if localLoginEnabled {
+			loginMode = "multi"
+		} else {
+			loginMode = "sso"
+		}
+	} else {
+		loginMode = "local"
+	}
 	cozePrivateKeyFile := strings.TrimSpace(os.Getenv("COZE_PRIVATE_KEY_FILE"))
 	if cozePrivateKeyFile == "" {
 		if _, statErr := os.Stat("backend/app/private_key.pem"); statErr == nil {
@@ -86,7 +100,9 @@ func Load() (Config, error) {
 
 	return Config{
 		Addr:               env("HTTP_ADDR", ":5050"),
-		AuthMode:           strings.ToLower(env("AUTH_MODE", "local")),
+		AuthMode:           loginMode,
+		LocalLoginEnabled:  localLoginEnabled,
+		SSOLoginEnabled:    ssoLoginEnabled,
 		DatabasePath:       env("PINGTAI_DB_PATH", DefaultDatabasePath()),
 		SSOBaseURL:         strings.TrimRight(env("SSO_BASE_URL", "https://ids.zcvc.cn/cas"), "/"),
 		SSOServiceURL:      strings.TrimSpace(os.Getenv("SSO_SERVICE_URL")),
@@ -140,8 +156,12 @@ func (c Config) Validate() error {
 	if authMode == "" {
 		authMode = "local"
 	}
-	if authMode != "local" && authMode != "sso" {
-		return errors.New("AUTH_MODE must be local or sso")
+	if authMode != "local" && authMode != "sso" && authMode != "multi" {
+		return errors.New("AUTH_MODE must be local, sso or multi")
+	}
+	ssoLoginEnabled := c.SSOLoginEnabled || authMode == "sso" || authMode == "multi"
+	if !c.LocalLoginEnabled && !ssoLoginEnabled {
+		return errors.New("at least one login method must be enabled")
 	}
 	if c.SSOSettingsComplete() {
 		base, err := url.Parse(c.SSOBaseURL)
@@ -159,7 +179,7 @@ func (c Config) Validate() error {
 			}
 		}
 	}
-	if authMode == "sso" {
+	if ssoLoginEnabled {
 		if !c.SSOSettingsComplete() {
 			return errors.New("SSO mode requires SSO_CLIENT_ID, SSO_CLIENT_SECRET and SSO_REDIRECT_URL")
 		}
@@ -234,7 +254,21 @@ func (c Config) SSOSettingsComplete() bool {
 }
 
 func (c Config) SSOConfigured() bool {
-	return strings.EqualFold(strings.TrimSpace(c.AuthMode), "sso") && c.SSOSettingsComplete()
+	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
+	return (c.SSOLoginEnabled || mode == "sso" || mode == "multi") && c.SSOSettingsComplete()
+}
+
+func (c Config) LoginMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
+	ssoEnabled := c.SSOLoginEnabled || mode == "sso" || mode == "multi"
+	switch {
+	case c.LocalLoginEnabled && ssoEnabled:
+		return "multi"
+	case ssoEnabled:
+		return "sso"
+	default:
+		return "local"
+	}
 }
 
 func (c Config) IsSSOAdmin(account string) bool {
@@ -312,5 +346,17 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func envBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 

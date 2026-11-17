@@ -25,7 +25,7 @@ func DefaultDatabasePath() string {
 
 func Defaults() Config {
 	return Config{
-		Addr: ":5050", AuthMode: "local", DatabasePath: DefaultDatabasePath(),
+		Addr: ":5050", AuthMode: "local", LocalLoginEnabled: true, SSOLoginEnabled: false, DatabasePath: DefaultDatabasePath(),
 		SSOBaseURL: "https://ids.zcvc.cn/cas", ChatProvider: "openai", AccessTokenTTL: 30 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour, MaxUploadBytes: 100 * 1024 * 1024,
 		CozeBaseURL: "https://api.coze.cn", CozeWorkspaceID: "7481824441182617636",
@@ -56,6 +56,14 @@ func loadSaved() (Config, bool, error) {
 	if err := json.Unmarshal(contents, &saved); err != nil {
 		return Config{}, true, errors.New("web configuration is invalid JSON; reopen /setup to repair it")
 	}
+	// Upgrade pre-multi-login configuration without disabling local accounts.
+	if _, exists := fields["LocalLoginEnabled"]; !exists {
+		saved.LocalLoginEnabled = true
+	}
+	if _, exists := fields["SSOLoginEnabled"]; !exists {
+		saved.SSOLoginEnabled = saved.AuthMode == "sso" || saved.AuthMode == "multi"
+	}
+	saved.AuthMode = saved.LoginMode()
 	return saved, true, nil
 }
 

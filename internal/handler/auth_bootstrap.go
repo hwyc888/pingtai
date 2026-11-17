@@ -73,7 +73,7 @@ func (h *Handler) RegisterFirstAdmin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "管理员已创建，请使用刚设置的账号密码登录")
 		return
 	}
-	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, "", h.requestSecure(r))
+	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, "", "local", h.requestSecure(r))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0,
 		"msg": "管理员账户创建成功",

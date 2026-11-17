@@ -6,10 +6,31 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net/http"
 	"mime/multipart"
 	"path/filepath"
 	"strings"
 )
+
+func requestChatFiles(r *http.Request) []*multipart.FileHeader {
+	if r == nil || r.MultipartForm == nil {
+		return nil
+	}
+	files := r.MultipartForm.File["files"]
+	if len(files) == 0 {
+		files = r.MultipartForm.File["file"]
+	}
+	return files
+}
+
+func isKnowledgeImageFilename(filename string) bool {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".jpg", ".jpeg", ".png":
+		return true
+	default:
+		return false
+	}
+}
 
 func (h *Handler) uploadCozeFile(ctx context.Context, file multipart.File, header *multipart.FileHeader) (string, error) {
 	if file == nil || header == nil {
