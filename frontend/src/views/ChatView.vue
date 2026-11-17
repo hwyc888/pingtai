@@ -521,7 +521,14 @@ async function sendMessage(text = draft.value, options = {}) {
       const message = error?.message || copy.requestFailed
       if (message.includes('当前没有配置模型渠道')) {
         messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
-        if (!options.regenerate) { draft.value = rawContent; attachments.value = selectedFiles }
+        if (!options.regenerate) {
+          draft.value = rawContent
+          attachments.value = selectedFiles
+          if (knowledgeMentionRequested) {
+            knowledgeMentionSelected.value = true
+            knowledgeEnabled.value = true
+          }
+        }
         showNoProviderModal.value = true
         pageError.value = ''
       } else pageError.value = message
@@ -842,7 +849,7 @@ onBeforeUnmount(() => {
             role="option"
             :aria-selected="true"
             :disabled="!knowledgeBases.length"
-            @mousedown.prevent
+            @pointerdown.prevent
             @click="selectKnowledgeMention"
           >
             <span class="mention-suggestion-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" /></span>
