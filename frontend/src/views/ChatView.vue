@@ -47,6 +47,10 @@ const composerExpanded = computed(() =>
   draft.value.includes('\n') || draft.value.length > 55
 )
 
+const selectedKnowledgeBase = computed(() =>
+  knowledgeBases.value.find((item) => item.id === selectedKnowledgeBaseId.value) || null
+)
+
 function fileReference(file) {
   return { name: file.name, size: file.size, type: isImageFile(file) ? 'image' : 'file' }
 }
@@ -704,55 +708,97 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
+      <div v-if="knowledgeBases.length" class="composer-context-toolbar" aria-label="对话上下文设置">
+        <div class="composer-context-main">
+          <label class="knowledge-toggle">
+            <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
+            <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
+            <span>知识库</span>
+          </label>
+          <select
+            v-model="selectedKnowledgeBaseId"
+            class="knowledge-base-select"
+            :disabled="!knowledgeEnabled || isSending"
+            aria-label="选择知识库"
+          >
+            <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">
+              {{ base.name }} · {{ base.owner_username }}
+            </option>
+          </select>
+        </div>
+        <div class="composer-context-actions">
+          <span v-if="knowledgeEnabled && selectedKnowledgeBase" class="knowledge-document-count">
+            {{ Number(selectedKnowledgeBase.document_count || 0) }} 份文档 · {{ selectedKnowledgeBase.name }}
+          </span>
+          <span v-else class="knowledge-context-hint">启用后将在回答中检索相关资料</span>
+          <!-- Future voice-input controls belong in this upper context toolbar. -->
+        </div>
+      </div>
+
       <div class="composer-shell" :class="{ 'composer-compact': !composerExpanded, 'composer-expanded': composerExpanded }">
         <div v-if="editingMessageId" class="editing-message-bar">
           <span>正在编辑已发送的问题，重新发送后该消息之后的回答将被替换</span>
           <button type="button" :disabled="isSending" @click="cancelEditMessage">取消编辑</button>
         </div>
-        <div v-if="attachments.length" class="attachment-list" aria-label="待发送文件引用">
-          <div v-for="(attachment, index) in attachments" :key="attachment.name + '-' + attachment.lastModified + '-' + index" class="attachment-tile">
-            <button class="attachment-remove" type="button" :aria-label="'移除 ' + attachment.name" :disabled="isSending" @click="removeAttachment(index)">&times;</button>
-            <span class="attachment-tile-icon" aria-hidden="true">{{ isImageFile(attachment) ? '▧' : '▤' }}</span>
-            <span class="attachment-tile-details">
-              <strong :title="attachment.name">{{ attachment.name }}</strong>
-              <small>{{ isImageFile(attachment) ? '图片' : 'TXT' }} · {{ formatFileSize(attachment.size) }}</small>
-            </span>
-          </div>
-        </div>
-        <textarea
-          ref="composerInput"
-          v-model="draft"
-          class="composer-input"
-          rows="1"
-          :placeholder="attachments.length ? '询问附件内容…' : '发送消息开始提问…'"
-          :disabled="isSending"
-          :aria-label="copy.sendPlaceholder"
-          @keydown="handleComposerKeydown"
-          @input="resizeComposer"
-        ></textarea>
-        <div class="composer-actions">
-          <div class="composer-tool-group">
-            <label class="attach-button" :title="copy.attach" aria-label="添加附件">
-              <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
-              <span aria-hidden="true">+</span>
-            </label>
-            <div v-if="models.length || knowledgeBases.length" class="footer-toolbar">
-              <label v-if="models.length" class="model-select-label">
-                <span>模型</span>
-                <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" aria-label="选择模型" @change="selectModel($event.target.value)">
-                  <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">{{ model.name }}{{ model.default ? '（默认）' : '' }}</option>
-                </select>
-              </label>
-              <label v-if="knowledgeBases.length" class="knowledge-toggle">
-                <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
-                <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
-                <span>知识库</span>
-              </label>
-              <select v-if="knowledgeBases.length && knowledgeEnabled" v-model="selectedKnowledgeBaseId" class="knowledge-base-select" :disabled="isSending" aria-label="选择知识库">
-                <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }} · {{ base.owner_username }}</option>
-              </select>
+
+        <Transition name="attachment-panel">
+          <TransitionGroup
+            v-if="attachments.length"
+            name="attachment-tile"
+            tag="div"
+            class="attachment-list"
+            aria-label="待发送文件引用"
+          >
+            <div
+              v-for="(attachment, index) in attachments"
+              :key="attachment.name + '-' + attachment.lastModified + '-' + index"
+              class="attachment-tile"
+            >
+              <button
+                class="attachment-remove"
+                type="button"
+                :aria-label="'移除 ' + attachment.name"
+                :disabled="isSending"
+                @click="removeAttachment(index)"
+              >&times;</button>
+              <span class="attachment-tile-icon" aria-hidden="true">{{ isImageFile(attachment) ? '▧' : '▤' }}</span>
+              <span class="attachment-tile-details">
+                <strong :title="attachment.name">{{ attachment.name }}</strong>
+                <small>{{ isImageFile(attachment) ? '图片' : 'TXT' }} · {{ formatFileSize(attachment.size) }}</small>
+              </span>
             </div>
+          </TransitionGroup>
+        </Transition>
+
+        <div class="composer-main-row" :class="{ 'composer-main-row-expanded': composerExpanded }">
+          <label class="attach-button" :title="copy.attach" aria-label="添加附件">
+            <input type="file" accept=".txt,.jpg,.jpeg,.png" multiple :disabled="isSending" @change="handleFileChange" />
+            <span aria-hidden="true">+</span>
+          </label>
+
+          <textarea
+            ref="composerInput"
+            v-model="draft"
+            class="composer-input"
+            rows="1"
+            :placeholder="attachments.length ? '询问附件内容…' : '发送消息开始提问…'"
+            :disabled="isSending"
+            :aria-label="copy.sendPlaceholder"
+            @keydown="handleComposerKeydown"
+            @input="resizeComposer"
+          ></textarea>
+
+          <div v-if="models.length" class="footer-toolbar composer-model-toolbar">
+            <label class="model-select-label">
+              <span>模型</span>
+              <select :value="selectedBot?.bot_id || ''" :disabled="!models.length || isSending" aria-label="选择模型" @change="selectModel($event.target.value)">
+                <option v-for="model in models" :key="model.bot_id" :value="model.bot_id">
+                  {{ model.name }}{{ model.default ? '（默认）' : '' }}
+                </option>
+              </select>
+            </label>
           </div>
+
           <button v-if="isSending" class="stop-button" type="button" aria-label="停止生成" title="停止生成" @click="stopGeneration"><span></span>停止</button>
           <button v-else class="send-button" type="button" :disabled="!canSend" :aria-label="copy.send" @click="sendMessage()">&#8593;</button>
         </div>
@@ -771,34 +817,36 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
-      <aside class="history-drawer" :aria-label="copy.history">
-        <button class="start-chat-button" type="button" :disabled="isSending" @click="startNewConversation">+ {{ copy.startNewChat }}</button>
-        <button v-if="supportsLocalHistory && conversations.length" class="clear-history-button" type="button" :disabled="isSending" @click="clearAllHistory">清空全部历史对话</button>
-        <div class="history-list">
-          <div v-if="historyLoading" class="history-status">{{ copy.loading }}</div>
-          <div v-else-if="historyError" class="history-status history-error">{{ historyError }}</div>
-          <div v-else-if="!conversations.length" class="history-empty-state">
-            <span class="history-empty-icon">&#128196;</span>
-            <strong>{{ copy.noHistory }}</strong>
-            <small>{{ copy.historyHint }}</small>
+    <Transition name="history-drawer">
+      <div v-if="showHistoryDrawer" class="drawer-backdrop" @click.self="showHistoryDrawer = false">
+        <aside class="history-drawer" :aria-label="copy.history">
+          <button class="start-chat-button" type="button" :disabled="isSending" @click="startNewConversation">+ {{ copy.startNewChat }}</button>
+          <button v-if="supportsLocalHistory && conversations.length" class="clear-history-button" type="button" :disabled="isSending" @click="clearAllHistory">清空全部历史对话</button>
+          <div class="history-list">
+            <div v-if="historyLoading" class="history-status">{{ copy.loading }}</div>
+            <div v-else-if="historyError" class="history-status history-error">{{ historyError }}</div>
+            <div v-else-if="!conversations.length" class="history-empty-state">
+              <span class="history-empty-icon">&#128196;</span>
+              <strong>{{ copy.noHistory }}</strong>
+              <small>{{ copy.historyHint }}</small>
+            </div>
+            <div v-else v-for="item in conversations" :key="item.id" class="history-item" :class="{ active: item.id === conversationId }">
+              <button class="history-item-open" type="button" @click="openConversation(item)">
+                <strong>{{ item.title || copy.newChat }}</strong>
+                <small>{{ formatDate(item.updated_at) }}</small>
+              </button>
+              <button class="history-item-delete" type="button" :aria-label="'删除 ' + (item.title || copy.newChat)" @click="deleteConversation(item)">×</button>
+            </div>
           </div>
-          <div v-else v-for="item in conversations" :key="item.id" class="history-item" :class="{ active: item.id === conversationId }">
-            <button class="history-item-open" type="button" @click="openConversation(item)">
-              <strong>{{ item.title || copy.newChat }}</strong>
-              <small>{{ formatDate(item.updated_at) }}</small>
-            </button>
-            <button class="history-item-delete" type="button" :aria-label="'删除 ' + (item.title || copy.newChat)" @click="deleteConversation(item)">×</button>
-          </div>
-        </div>
-        <footer class="drawer-user">
-          <span class="user-avatar">{{ usernameInitial }}</span>
-          <strong>{{ username }}</strong>
-          <button type="button" @click="router.push('/my-knowledge')">我的知识库</button>
-          <button v-if="isAdmin" type="button" @click="router.push('/admin')">平台管理</button>
-          <button type="button" @click="logout">{{ copy.logout }}</button>
-        </footer>
-      </aside>
-    </div>
+          <footer class="drawer-user">
+            <span class="user-avatar">{{ usernameInitial }}</span>
+            <strong>{{ username }}</strong>
+            <button type="button" @click="router.push('/my-knowledge')">我的知识库</button>
+            <button v-if="isAdmin" type="button" @click="router.push('/admin')">平台管理</button>
+            <button type="button" @click="logout">{{ copy.logout }}</button>
+          </footer>
+        </aside>
+      </div>
+    </Transition>
   </main>
 </template>
