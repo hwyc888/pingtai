@@ -1915,7 +1915,7 @@ button:disabled { cursor: not-allowed; }
   transition: color .28s ease, background-color .28s ease, border-color .28s ease, transform .36s cubic-bezier(.22,1,.36,1);
 }
 
-.composer-context-toolbar .knowledge-toggle:has(input:checked) {
+.composer-context-toolbar .knowledge-toggle.active {
   color: #435bd1;
   border-color: #dce3ff;
   background: #f0f3ff;
@@ -2400,10 +2400,16 @@ button:disabled { cursor: not-allowed; }
     row-gap: 5px;
   }
 
-  .composer-main-row .attach-button,
-  .composer-main-row-expanded .attach-button {
+  .composer-main-row .attach-button {
     grid-column: 1;
     grid-row: 1;
+    width: 31px;
+    height: 31px;
+  }
+
+  .composer-main-row-expanded .attach-button {
+    grid-column: 1;
+    grid-row: 2;
     width: 31px;
     height: 31px;
   }
@@ -2428,9 +2434,15 @@ button:disabled { cursor: not-allowed; }
     line-height: 1.6;
   }
 
-  .composer-main-row > .composer-model-toolbar,
-  .composer-main-row-expanded > .composer-model-toolbar {
+  .composer-main-row > .composer-model-toolbar {
     grid-column: 1 / 3;
+    grid-row: 2;
+    max-width: 100%;
+    padding-top: 1px;
+  }
+
+  .composer-main-row-expanded > .composer-model-toolbar {
+    grid-column: 2 / 3;
     grid-row: 2;
     max-width: 100%;
     padding-top: 1px;

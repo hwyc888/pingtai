@@ -710,7 +710,7 @@ onBeforeUnmount(() => {
     <footer class="chat-footer">
       <div v-if="knowledgeBases.length" class="composer-context-toolbar" aria-label="对话上下文设置">
         <div class="composer-context-main">
-          <label class="knowledge-toggle">
+          <label class="knowledge-toggle" :class="{ active: knowledgeEnabled }">
             <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
             <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
             <span>知识库</span>
