@@ -50,6 +50,8 @@ const composerExpanded = computed(() =>
 const selectedKnowledgeBase = computed(() =>
   knowledgeBases.value.find((item) => item.id === selectedKnowledgeBaseId.value) || null
 )
+const knowledgeMentionActive = computed(() => draft.value.includes('@知识库'))
+const showKnowledgeContext = computed(() => knowledgeMentionActive.value && knowledgeBases.value.length > 0)
 
 function fileReference(file) {
   return { name: file.name, size: file.size, type: isImageFile(file) ? 'image' : 'file' }
@@ -381,7 +383,15 @@ async function clearAllHistory() {
 }
 
 async function sendMessage(text = draft.value, options = {}) {
-  const content = String(text || '').trim() || (attachments.value.length ? '请阅读并分析附件内容。' : '')
+  const rawContent = String(text || '')
+  const knowledgeMentionRequested = rawContent.includes('@知识库') && knowledgeBases.value.length > 0
+  const contentWithoutMention = knowledgeMentionRequested
+    ? rawContent.replace(/@知识库/g, ' ')
+    : rawContent
+  const normalizedContent = contentWithoutMention.replace(/[ \t]{2,}/g, ' ').trim()
+  const useKnowledge = knowledgeMentionRequested && knowledgeEnabled.value && Boolean(selectedKnowledgeBaseId.value)
+  const content = normalizedContent ||
+    (attachments.value.length ? '请阅读并分析附件内容。' : useKnowledge ? '请根据所选知识库回答我的问题。' : '')
   if (!content || isSending.value) return
   isSending.value = true
   pageError.value = ''
@@ -445,7 +455,7 @@ async function sendMessage(text = draft.value, options = {}) {
     form.append('bot_id', selectedBot.value.bot_id)
     form.append('stream', '1')
     form.append('content', content)
-    form.append('knowledge_base_id', knowledgeEnabled.value ? selectedKnowledgeBaseId.value : '')
+    form.append('knowledge_base_id', useKnowledge ? selectedKnowledgeBaseId.value : '')
     form.append('url', '')
     selectedFiles.forEach((file) => form.append('files', file))
     const response = await api.stream('/agents/chat', form, { signal: controller.signal, headers: { Accept: 'text/event-stream' } })
@@ -505,7 +515,7 @@ async function sendMessage(text = draft.value, options = {}) {
       const message = error?.message || copy.requestFailed
       if (message.includes('当前没有配置模型渠道')) {
         messages.value.splice(options.regenerate ? assistantIndex : assistantIndex - 1, options.regenerate ? 1 : 2)
-        if (!options.regenerate) { draft.value = content; attachments.value = selectedFiles }
+        if (!options.regenerate) { draft.value = rawContent; attachments.value = selectedFiles }
         showNoProviderModal.value = true
         pageError.value = ''
       } else pageError.value = message
@@ -525,7 +535,13 @@ function resizeComposer() {
   input.style.height = Math.min(input.scrollHeight, 160) + 'px'
 }
 
-watch(draft, () => nextTick(resizeComposer))
+watch(draft, (value, previousValue) => {
+  const hasKnowledgeMention = value.includes('@知识库')
+  const hadKnowledgeMention = previousValue.includes('@知识库')
+  if (hasKnowledgeMention && !hadKnowledgeMention) knowledgeEnabled.value = true
+  if (!hasKnowledgeMention) knowledgeEnabled.value = false
+  nextTick(resizeComposer)
+}, { flush: 'sync' })
 
 function stopGeneration() {
   if (!activeRequestController || !isSending.value) return
@@ -708,7 +724,8 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <div v-if="knowledgeBases.length" class="composer-context-toolbar" aria-label="对话上下文设置">
+      <Transition name="knowledge-context">
+        <div v-if="showKnowledgeContext" class="composer-context-toolbar" aria-label="对话上下文设置">
         <div class="composer-context-main">
           <label class="knowledge-toggle" :class="{ active: knowledgeEnabled }">
             <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
@@ -733,7 +750,8 @@ onBeforeUnmount(() => {
           <span v-else class="knowledge-context-hint">启用后将在回答中检索相关资料</span>
           <!-- Future voice-input controls belong in this upper context toolbar. -->
         </div>
-      </div>
+        </div>
+      </Transition>
 
       <div class="composer-shell" :class="{ 'composer-compact': !composerExpanded, 'composer-expanded': composerExpanded }">
         <div v-if="editingMessageId" class="editing-message-bar">

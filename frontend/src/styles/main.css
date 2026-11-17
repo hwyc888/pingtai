@@ -2499,3 +2499,121 @@ button:disabled { cursor: not-allowed; }
     animation-iteration-count: 1 !important;
   }
 }
+
+/* On-demand @knowledge context: reserve the upper rail only while the mention exists. */
+.knowledge-context-enter-active,
+.knowledge-context-leave-active {
+  overflow: hidden;
+  transition:
+    max-height .34s cubic-bezier(.22,1,.36,1),
+    opacity .22s ease,
+    transform .34s cubic-bezier(.22,1,.36,1),
+    margin .34s cubic-bezier(.22,1,.36,1);
+}
+
+.knowledge-context-enter-from,
+.knowledge-context-leave-to {
+  max-height: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  opacity: 0;
+  transform: translate3d(0,8px,0);
+}
+
+.knowledge-context-enter-to,
+.knowledge-context-leave-from {
+  max-height: 120px;
+  opacity: 1;
+  transform: translate3d(0,0,0);
+}
+
+/* Keep the composer corner radius constant: height changes, but it never morphs through an oval. */
+.chat-footer .composer-shell {
+  max-height: 58px;
+  border-radius: 23px;
+  transition:
+    max-height .52s cubic-bezier(.22,1,.36,1),
+    min-height .46s cubic-bezier(.22,1,.36,1),
+    padding .46s cubic-bezier(.22,1,.36,1),
+    border-color .3s ease,
+    box-shadow .4s cubic-bezier(.22,1,.36,1);
+}
+
+.chat-footer .composer-shell.composer-compact {
+  min-height: 58px;
+  max-height: 58px;
+  border-radius: 23px;
+}
+
+.chat-footer .composer-shell.composer-expanded {
+  min-height: 154px;
+  max-height: 480px;
+  border-radius: 23px;
+}
+
+/* A lightweight overlay and a single compositor-friendly drawer transform avoid blur-induced stutter. */
+.drawer-backdrop {
+  background: rgba(31,39,75,.26);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.history-drawer-enter-active,
+.history-drawer-leave-active {
+  transition: opacity .2s ease;
+}
+
+.history-drawer-enter-from,
+.history-drawer-leave-to {
+  opacity: 0;
+}
+
+.history-drawer-enter-active .history-drawer,
+.history-drawer-leave-active .history-drawer {
+  transition:
+    transform .38s cubic-bezier(.22,1,.36,1),
+    opacity .22s ease;
+  will-change: transform;
+}
+
+.history-drawer-enter-from .history-drawer {
+  opacity: .98;
+  transform: translate3d(-100%,0,0);
+}
+
+.history-drawer-leave-to .history-drawer {
+  opacity: .98;
+  transform: translate3d(-100%,0,0);
+}
+
+.history-drawer {
+  transform: translate3d(0,0,0);
+  backface-visibility: hidden;
+}
+
+.history-list {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 760px) {
+  .knowledge-context-enter-to,
+  .knowledge-context-leave-from { max-height: 140px; }
+
+  .chat-footer .composer-shell {
+    max-height: 56px;
+    border-radius: 22px;
+  }
+
+  .chat-footer .composer-shell.composer-compact {
+    min-height: 56px;
+    max-height: 56px;
+    border-radius: 22px;
+  }
+
+  .chat-footer .composer-shell.composer-expanded {
+    min-height: 148px;
+    max-height: 420px;
+    border-radius: 22px;
+  }
+}
