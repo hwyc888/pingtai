@@ -99,6 +99,10 @@ func (c *Client) ExchangeCode(ctx context.Context, code string) (TokenResponse, 
 		return TokenResponse{}, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		code := oauthErrorCode(body)
+		if code != "" {
+			return TokenResponse{}, fmt.Errorf("SSO token endpoint returned HTTP %d (OAuth error: %s)", response.StatusCode, code)
+		}
 		return TokenResponse{}, fmt.Errorf("SSO token endpoint returned HTTP %d", response.StatusCode)
 	}
 	var token TokenResponse
@@ -141,6 +145,10 @@ func (c *Client) UserProfile(ctx context.Context, accessToken string) (UserProfi
 		return UserProfile{}, err
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		code := oauthErrorCode(body)
+		if code != "" {
+			return UserProfile{}, fmt.Errorf("SSO profile endpoint returned HTTP %d (OAuth error: %s)", response.StatusCode, code)
+		}
 		return UserProfile{}, fmt.Errorf("SSO profile endpoint returned HTTP %d", response.StatusCode)
 	}
 	profile, err := ParseUserProfile(body)
@@ -247,6 +255,28 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func oauthErrorCode(body []byte) string {
+	var payload struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(payload.Error)
+	if value == "" || len(value) > 48 {
+		return ""
+	}
+	for _, character := range value {
+		if !((character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '-') {
+			return ""
+		}
+	}
+	return value
 }
 
 func readLimited(reader io.Reader) ([]byte, error) {

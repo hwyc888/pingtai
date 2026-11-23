@@ -95,6 +95,18 @@ func TestParseUserProfileFallbackAndMissingAccount(t *testing.T) {
 	}
 }
 
+func TestOAuthErrorCodeOnlyReturnsSafeErrorIdentifier(t *testing.T) {
+	if got := oauthErrorCode([]byte(`{"error":"invalid_grant","error_description":"code has expired"}`)); got != "invalid_grant" {
+		t.Fatalf("oauth error code = %q, want invalid_grant", got)
+	}
+	if got := oauthErrorCode([]byte(`{"error":"invalid client secret: secret-value"}`)); got != "" {
+		t.Fatalf("unsafe oauth error code was exposed: %q", got)
+	}
+	if got := oauthErrorCode([]byte(`not-json`)); got != "" {
+		t.Fatalf("malformed oauth error response should not expose a code, got %q", got)
+	}
+}
+
 func TestParseUserProfileSupportsSchoolUserInfoShape(t *testing.T) {
 	profile, err := ParseUserProfile([]byte("{\"service\":\"https://platform.example/\",\"id\":\"admin\",\"client_id\":\"client\",\"user_info\":{\"phone\":null,\"account\":\"admin\",\"useraccount\":\"admin\",\"email\":null,\"username\":\"系统管理员\"}}"))
 	if err != nil {

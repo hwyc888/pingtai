@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,11 +21,13 @@ const signedInCookie = "pingtai_signed_in"
 
 func (h *Handler) SSOLogin(w http.ResponseWriter, r *http.Request) {
 	if !h.Config.SSOConfigured() {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		log.Printf("[sso] login blocked: SSO settings are incomplete")
+		http.Redirect(w, r, "/login?sso_error=config", http.StatusSeeOther)
 		return
 	}
 	var random [32]byte
 	if _, err := rand.Read(random[:]); err != nil {
+		log.Printf("[sso] cannot generate login state: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": 500, "msg": "无法初始化统一身份认证"})
 		return
 	}
@@ -42,8 +45,9 @@ func (h *Handler) SSOLogin(w http.ResponseWriter, r *http.Request) {
 	})
 	target, err := sso.NewClient(*h.Config).AuthorizationURL(state)
 	if err != nil {
+		log.Printf("[sso] cannot build authorization URL: %v", err)
 		clearSSOCookies(w, h.ssoSecure())
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": 500, "msg": "无法生成统一身份认证地址"})
+		http.Redirect(w, r, "/login?sso_error=config", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusFound)
@@ -54,23 +58,32 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(ssoReturnCookie); err == nil {
 		returnTo = safeSSOReturnTo(cookie.Value)
 	}
-	if providerError := r.URL.Query().Get("error"); providerError != "" {
+	if providerError := strings.TrimSpace(r.URL.Query().Get("error")); providerError != "" {
+		log.Printf("[sso] authorization provider returned error=%s", safeSSOErrorCode(providerError))
 		clearSSOCookies(w, h.ssoSecure())
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/login?sso_error=provider", http.StatusSeeOther)
 		return
 	}
 	stateCookie, err := r.Cookie(ssoStateCookie)
 	state := r.URL.Query().Get("state")
 	if err != nil || state == "" || subtle.ConstantTimeCompare([]byte(stateCookie.Value), []byte(state)) != 1 {
+		log.Printf("[sso] callback state validation failed: state_cookie_present=%t state_parameter_present=%t request_host=%q configured_callback_host=%q",
+			err == nil, state != "", r.Host, ssoCallbackHost(h.Config.SSORedirectURL))
 		clearSSOCookies(w, h.ssoSecure())
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		http.Redirect(w, r, "/login?sso_error=state", http.StatusSeeOther)
 		return
 	}
 	clearSSOCookies(w, h.ssoSecure())
 
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if code == "" || !h.Config.SSOConfigured() {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+	if code == "" {
+		log.Printf("[sso] callback did not contain an authorization code")
+		http.Redirect(w, r, "/login?sso_error=missing_code", http.StatusSeeOther)
+		return
+	}
+	if !h.Config.SSOConfigured() {
+		log.Printf("[sso] callback received a code but SSO settings are incomplete")
+		http.Redirect(w, r, "/login?sso_error=config", http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
@@ -79,26 +92,58 @@ func (h *Handler) SSOCallback(w http.ResponseWriter, r *http.Request) {
 	client := sso.NewClient(*h.Config)
 	providerToken, err := client.ExchangeCode(ctx, code)
 	if err != nil {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		log.Printf("[sso] authorization-code exchange failed: %v", err)
+		http.Redirect(w, r, "/login?sso_error=token", http.StatusSeeOther)
 		return
 	}
 	profile, err := client.UserProfile(ctx, providerToken.AccessToken)
 	if err != nil {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		log.Printf("[sso] user-profile request failed: %v", err)
+		http.Redirect(w, r, "/login?sso_error=profile", http.StatusSeeOther)
 		return
 	}
 	stableIdentity, err := h.Users.EnsureExternalIdentity(ctx, "sso", profile.Account, profile.Account, profile.DisplayName)
 	if err != nil {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		log.Printf("[sso] cannot persist external identity: %v", err)
+		http.Redirect(w, r, "/login?sso_error=identity", http.StatusSeeOther)
 		return
 	}
 	pair, err := h.Auth.IssuePairForIdentity(profile.Account, profile.DisplayName, stableIdentity.ID, "sso")
 	if err != nil {
-		http.Redirect(w, r, "/login?sso_error=1", http.StatusSeeOther)
+		log.Printf("[sso] cannot issue platform session: %v", err)
+		http.Redirect(w, r, "/login?sso_error=session", http.StatusSeeOther)
 		return
 	}
 	h.setAuthCookies(w, pair.AccessToken, pair.RefreshToken, providerToken.RefreshToken, "sso", h.ssoSecure() || r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https"))
 	http.Redirect(w, r, returnTo, http.StatusSeeOther)
+}
+
+func ssoCallbackHost(callbackURL string) string {
+	parsed, err := url.Parse(strings.TrimSpace(callbackURL))
+	if err != nil {
+		return ""
+	}
+	return parsed.Host
+}
+
+func safeSSOErrorCode(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 48 {
+		value = value[:48]
+	}
+	var builder strings.Builder
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') ||
+			(character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') ||
+			character == '_' || character == '-' {
+			builder.WriteRune(character)
+		}
+	}
+	if builder.Len() == 0 {
+		return "unknown"
+	}
+	return builder.String()
 }
 
 func (h *Handler) SSOLogout(w http.ResponseWriter, r *http.Request) {

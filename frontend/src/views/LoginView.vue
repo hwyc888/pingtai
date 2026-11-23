@@ -10,7 +10,7 @@ const needsAdmin = ref(false)
 const localLoginEnabled = ref(true)
 const ssoLoginEnabled = ref(false)
 const loginChoice = ref('')
-const ssoError = ref(false)
+const ssoError = ref('')
 const errorMessage = ref('')
 const username = ref('')
 const password = ref('')
@@ -23,7 +23,7 @@ async function loadBootstrapStatus() {
     const result = await api.get('/auth/bootstrap/status', undefined, { auth: false })
     if (Number(result?.code) !== 0) throw new Error(result?.msg || '无法读取平台状态')
     needsAdmin.value = Boolean(result?.data?.needs_admin)
-    ssoError.value = new URLSearchParams(window.location.search).get('sso_error') === '1'
+    ssoError.value = new URLSearchParams(window.location.search).get('sso_error') || ''
     if (!needsAdmin.value) {
       const modeResult = await api.get('/auth/mode', undefined, { auth: false })
       const auth = modeResult?.data || {}
@@ -33,7 +33,18 @@ async function loadBootstrapStatus() {
         errorMessage.value = '平台暂未启用任何登录方式，请联系管理员。'
       } else if (ssoError.value && ssoLoginEnabled.value) {
         loginChoice.value = localLoginEnabled.value ? 'sso' : ''
-        errorMessage.value = '学校统一身份认证未完成，请检查学校账号状态或联系管理员。'
+        const ssoMessages = {
+          '1': '学校统一身份认证未完成。请检查服务日志中的 [sso] 错误记录。',
+          config: '统一身份认证配置不完整，请管理员检查 CAS 地址、Client ID、Client Secret 和回调地址。',
+          provider: '学校认证中心拒绝了授权请求。请检查学校后台应用登记、Client ID 和回调地址。',
+          state: '认证返回时校验状态丢失。请使用同一个 IP/域名和协议重新登录，并确认浏览器允许 Cookie。',
+          missing_code: '认证中心没有返回授权码。请检查授权回调登记及学校端授权结果。',
+          token: '授权码换取访问令牌失败。请管理员检查 Client Secret、回调地址是否完全一致、服务器时间，以及授权码是否过期或重复使用。',
+          profile: '访问令牌已获取，但读取学校用户资料失败。请管理员检查认证中心用户资料接口及服务器网络。',
+          identity: '学校用户资料缺少可用账号标识。请检查 /oauth2.0/profile 返回的 account、useraccount 或 id 字段。',
+          session: '学校认证已通过，但平台创建登录会话失败。请管理员检查平台数据库和服务日志。',
+        }
+        errorMessage.value = ssoMessages[ssoError.value] || ssoMessages['1']
       } else if (!localLoginEnabled.value && ssoLoginEnabled.value) {
         loginChoice.value = 'sso'
       } else if (localLoginEnabled.value && !ssoLoginEnabled.value) {
