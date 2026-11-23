@@ -1056,6 +1056,7 @@ onBeforeUnmount(() => {
             <span class="user-avatar">{{ usernameInitial }}</span>
             <strong>{{ username }}</strong>
             <button type="button" @click="router.push('/my-knowledge')">我的知识库</button>
+            <button type="button" @click="showHistoryDrawer = false; router.push('/files')">资料中心</button>
             <button v-if="isAdmin" type="button" @click="router.push('/admin')">平台管理</button>
             <button type="button" @click="logout">{{ copy.logout }}</button>
           </footer>

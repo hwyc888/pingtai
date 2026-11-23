@@ -39,6 +39,36 @@ func TestKnowledgeTermsIncludesChineseAndEnglishTerms(t *testing.T) {
 	}
 }
 
+func TestExtractOfficeOpenXMLTextSupportsSpreadsheetAndSlides(t *testing.T) {
+	makeArchive := func(path, xmlContent string) []byte {
+		var buffer bytes.Buffer
+		writer := zip.NewWriter(&buffer)
+		file, err := writer.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write([]byte(xmlContent)); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return buffer.Bytes()
+	}
+
+	spreadsheet := makeArchive("xl/sharedStrings.xml", "<sst><si><t>教学计划与课程安排</t></si></sst>")
+	spreadsheetText, err := extractKnowledgeText(context.Background(), "课程表.xlsx", spreadsheet)
+	if err != nil || !strings.Contains(spreadsheetText, "课程安排") {
+		t.Fatalf("xlsx text extraction failed: text=%q err=%v", spreadsheetText, err)
+	}
+
+	presentation := makeArchive("ppt/slides/slide1.xml", "<p:sld xmlns:a='urn:a'><a:p><a:r><a:t>年度工作汇报</a:t></a:r></a:p></p:sld>")
+	presentationText, err := extractKnowledgeText(context.Background(), "工作汇报.pptx", presentation)
+	if err != nil || !strings.Contains(presentationText, "年度工作汇报") {
+		t.Fatalf("pptx text extraction failed: text=%q err=%v", presentationText, err)
+	}
+}
+
 func TestExtractDOCXTextReadsParagraphs(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)

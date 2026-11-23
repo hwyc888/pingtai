@@ -954,6 +954,18 @@ func extractKnowledgeText(ctx context.Context, filename string, data []byte) (st
 			return "", err
 		}
 		content = parsed
+	case ".xlsx":
+		parsed, err := extractOfficeOpenXMLText(data, "xlsx")
+		if err != nil {
+			return "", err
+		}
+		content = parsed
+	case ".pptx":
+		parsed, err := extractOfficeOpenXMLText(data, "pptx")
+		if err != nil {
+			return "", err
+		}
+		content = parsed
 	case ".pdf":
 		parsed, err := extractPDFText(ctx, data)
 		if err != nil {
@@ -961,7 +973,7 @@ func extractKnowledgeText(ctx context.Context, filename string, data []byte) (st
 		}
 		content = parsed
 	default:
-		return "", errors.New("支持 TXT、MD、CSV、JSON、HTML、PDF 和 DOCX 文件")
+		return "", errors.New("当前格式暂不支持全文提取；支持 TXT、MD、CSV、JSON、HTML、PDF、DOCX、XLSX 和 PPTX")
 	}
 	content = strings.ToValidUTF8(content, "")
 	content = strings.ReplaceAll(content, "\x00", "")
@@ -1013,6 +1025,69 @@ func extractDOCXText(data []byte) (string, error) {
 		return strings.TrimSpace(builder.String()), nil
 	}
 	return "", errors.New("DOCX 文件缺少正文内容")
+}
+
+func extractOfficeOpenXMLText(data []byte, kind string) (string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return "", errors.New("Office Open XML 文件格式无效")
+	}
+	var builder strings.Builder
+	for _, file := range reader.File {
+		name := strings.ToLower(file.Name)
+		include := false
+		switch kind {
+		case "xlsx":
+			include = name == "xl/sharedstrings.xml" ||
+				(strings.HasPrefix(name, "xl/worksheets/sheet") && strings.HasSuffix(name, ".xml"))
+		case "pptx":
+			include = strings.HasPrefix(name, "ppt/slides/slide") && strings.HasSuffix(name, ".xml")
+		}
+		if !include {
+			continue
+		}
+		if file.UncompressedSize64 > 32<<20 {
+			return "", errors.New("Office 文档内部 XML 文件过大")
+		}
+		stream, openErr := file.Open()
+		if openErr != nil {
+			return "", openErr
+		}
+		decoder := xml.NewDecoder(stream)
+		for {
+			token, tokenErr := decoder.Token()
+			if tokenErr == io.EOF {
+				break
+			}
+			if tokenErr != nil {
+				_ = stream.Close()
+				return "", errors.New("无法解析 Office 文档内容")
+			}
+			switch item := token.(type) {
+			case xml.CharData:
+				value := strings.TrimSpace(string(item))
+				if value != "" {
+					builder.WriteString(value)
+					builder.WriteByte(' ')
+				}
+			case xml.EndElement:
+				switch item.Name.Local {
+				case "p", "row", "si":
+					builder.WriteByte('\n')
+				}
+			}
+			if builder.Len() > 8<<20 {
+				_ = stream.Close()
+				return "", errors.New("Office 文档提取文本超过 8 MB")
+			}
+		}
+		_ = stream.Close()
+	}
+	content := strings.TrimSpace(builder.String())
+	if content == "" {
+		return "", errors.New("Office 文档中没有可读取的文本")
+	}
+	return content, nil
 }
 
 func extractPDFText(ctx context.Context, data []byte) (string, error) {

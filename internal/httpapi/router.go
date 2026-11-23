@@ -106,6 +106,15 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("GET /knowledge/bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListAvailableKnowledgeBases)))
 	api.Handle("GET /knowledge/my-bases", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListMyKnowledgeBases)))
 
+	fileAccess := func(next http.Handler) http.Handler {
+		return middleware.RequireAccess(h.Auth.Tokens(), next)
+	}
+	api.Handle("GET /files/search", fileAccess(http.HandlerFunc(h.SearchFiles)))
+	api.Handle("POST /files/upload", fileAccess(http.HandlerFunc(h.UploadFiles)))
+	api.Handle("GET /files/{id}/download", fileAccess(http.HandlerFunc(h.DownloadFile)))
+	api.Handle("GET /files/{id}/preview", fileAccess(http.HandlerFunc(h.PreviewFile)))
+	api.Handle("POST /files/{id}/delete", fileAccess(http.HandlerFunc(h.DeleteFile)))
+
 	api.Handle("GET /agents/models", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.ListChatModels)))
 	api.Handle("POST /agents/createConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.CreateConversation)))
 	api.Handle("GET /agents/getConversation", middleware.RequireAccess(h.Auth.Tokens(), http.HandlerFunc(h.GetConversation)))

@@ -33,7 +33,7 @@ The ZIP intentionally excludes any local .env file and the original frontend fol
 4. Sign in, open **平台管理 → 模型供应商**, add an OpenAI-compatible provider, enter its Base URL and API Key, discover models, select a default model, and activate the provider. The same management area also contains **知识库管理** and **登录设置**.
 5. Restart the service after activating or changing the active provider. Then start a new conversation and begin using the platform.
 
-There is no separate setup wizard, setup token, or first-run configuration page. SQLite is created automatically. The administrator manages providers, knowledge bases, login methods and local accounts inside the platform. The listening address and database path can be supplied through environment variables when needed; no MySQL server is required.
+There is no separate setup wizard, setup token, or first-run configuration page. SQLite is created automatically. The administrator manages providers, knowledge bases, the file center, login methods and local accounts inside the platform. The listening address and database path can be supplied through environment variables when needed; no MySQL server is required.
 
 The console window is for service logs and shutdown. The EXE serves the embedded frontend directly; no frontend/ folder or separate web server is required.
 
@@ -88,6 +88,12 @@ The administrator page offers two explicit checks. **Test connection** calls the
 Open **平台管理 → 知识库管理** to create knowledge bases, upload documents, enable or disable them for chat, and publish a document-list version snapshot. Users can turn on **使用知识库** in the chat composer and select an enabled knowledge base; retrieval is applied to each message where the switch is enabled.
 
 Documents are stored and indexed locally in SQLite. The first implementation uses Chinese/English keyword matching over overlapping text chunks; it does not require an external embedding API and is not vector-semantic search. Supported uploads are TXT, MD, CSV, JSON, HTML, DOCX and PDF. PDF extraction uses Poppler's `pdftotext`; on Ubuntu install it with `sudo apt-get install poppler-utils`. If it is unavailable, PDF uploads return a clear extraction error rather than silently indexing empty content. DOCX is parsed directly by the Go application.
+
+### File center
+
+Open **资料中心** from the chat history drawer. It stores the original uploaded file bytes in a private `files/` directory beside the configured SQLite database, while SQLite stores the file ID, owner identity, visibility, SHA-256, metadata and extracted-text search index. Search supports filename matches and full-text matches for TXT, MD, CSV, JSON, HTML, DOCX, XLSX and PPTX. PDF full-text extraction uses Poppler `pdftotext`; if the tool is unavailable, the original PDF is still saved and remains searchable by filename, with the extraction limitation shown in the UI. Legacy DOC/XLS/PPT and images are retained as original files and are filename-searchable; OCR and legacy binary office parsing are not included in this release.
+
+Files are private to the uploader by default. The uploader can choose shared visibility for all signed-in users; administrators can search, download and delete all files. Downloads and previews re-check the current user's identity and file permissions. Duplicate uploads by the same owner are detected by SHA-256 and reuse the existing file record. Back up the SQLite database and its sibling `files/` directory together; restoring only one side is incomplete.
 
 Knowledge-base access is configured in **平台管理 → 知识库管理**:
 

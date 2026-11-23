@@ -34,7 +34,7 @@ onMounted(load)
       <div>
         <div class="admin-brand-line"><BrandMark class="admin-brand-mark" /><p class="admin-eyebrow">超凡AI问答平台 · 管理中心</p></div>
         <h1>平台管理</h1>
-        <p class="admin-subtitle">管理模型供应商、知识库和平台登录方式。</p>
+        <p class="admin-subtitle">管理模型供应商、知识库、资料文件和平台登录方式。</p>
       </div>
       <div class="admin-header-actions">
         <button class="admin-secondary" type="button" @click="router.push('/IntelligentAI')">返回对话</button>
