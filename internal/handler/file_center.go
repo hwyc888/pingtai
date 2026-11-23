@@ -591,6 +591,10 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := strings.TrimSpace(r.PathValue("id"))
+	// Resolve administrator status before opening a transaction. The SQLite pool
+	// intentionally uses one connection, so querying the user table while a
+	// transaction owns that connection would deadlock.
+	admin := h.isKnowledgeAdmin(r.Context(), identity)
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "删除文件失败")
@@ -609,7 +613,6 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "读取文件信息失败")
 		return
 	}
-	admin := h.isKnowledgeAdmin(r.Context(), identity)
 	if !admin && ownerUserID != identity.UserID {
 		writeError(w, http.StatusForbidden, "只有文件上传者或管理员可以删除文件")
 		return
