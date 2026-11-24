@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark.vue'
 import ProviderManager from '../components/ProviderManager.vue'
-import KnowledgeManager from '../components/KnowledgeManager.vue'
+import KnowledgeCenterView from './KnowledgeCenterView.vue'
 import LoginSettings from '../components/LoginSettings.vue'
 
 const router = useRouter()
@@ -50,7 +50,7 @@ onMounted(load)
           <span>◇</span> 模型供应商
         </button>
         <button type="button" :class="{ active: activeTab === 'knowledge' }" @click="activeTab = 'knowledge'">
-          <span>▤</span> 知识库管理
+          <span>▤</span> 知识中心
         </button>
         <button type="button" :class="{ active: activeTab === 'login' }" @click="activeTab = 'login'">
           <span>♙</span> 登录设置
@@ -58,7 +58,7 @@ onMounted(load)
       </nav>
 
       <ProviderManager v-if="activeTab === 'providers'" />
-      <KnowledgeManager v-else-if="activeTab === 'knowledge'" :admin-mode="true" />
+      <KnowledgeCenterView v-else-if="activeTab === 'knowledge'" :admin-mode="true" embedded />
       <LoginSettings v-else />
     </template>
   </main>

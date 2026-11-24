@@ -100,6 +100,7 @@ func NewRouter(cfg *config.Config, h *handler.Handler) http.Handler {
 	api.Handle("POST /knowledge/manage/chunks/create", knowledgeAccess(http.HandlerFunc(h.CreateLocalKnowledgeChunk)))
 	api.Handle("POST /knowledge/manage/documents/upload", knowledgeAccess(http.HandlerFunc(h.UploadLocalKnowledgeDocuments)))
 	api.Handle("POST /knowledge/manage/documents/delete", knowledgeAccess(http.HandlerFunc(h.DeleteLocalKnowledgeDocument)))
+	api.Handle("POST /knowledge/manage/documents/attach-file", knowledgeAccess(http.HandlerFunc(h.AttachFileToKnowledgeBase)))
 	api.Handle("GET /knowledge/manage/versions", knowledgeAccess(http.HandlerFunc(h.ListLocalKnowledgeVersions)))
 	api.Handle("POST /knowledge/manage/versions/publish", knowledgeAccess(http.HandlerFunc(h.PublishLocalKnowledgeVersion)))
 

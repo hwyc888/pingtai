@@ -4,10 +4,13 @@ import { useRouter } from 'vue-router'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark.vue'
 
+const props = defineProps({ embedded: { type: Boolean, default: false } })
 const router = useRouter()
 const loading = ref(false)
 const uploading = ref(false)
 const isAdmin = ref(false)
+const knowledgeBases = ref([])
+const selectedBaseId = ref('')
 const query = ref('')
 const extension = ref('all')
 const ownerFilter = ref('')
@@ -66,6 +69,15 @@ async function loadProfile() {
   const result = await api.get('/auth/me')
   isAdmin.value = Boolean((result?.data ?? result ?? {}).is_admin)
 }
+
+async function loadKnowledgeBases() {
+  const path = isAdmin.value ? '/knowledge/manage/bases' : '/knowledge/my-bases'
+  const result = unwrap(await api.get(path))
+  knowledgeBases.value = Array.isArray(result) ? result : []
+  if (!knowledgeBases.value.some((base) => base.id === selectedBaseId.value)) {
+    selectedBaseId.value = ''
+  }
+}
 async function searchFiles(nextPage = 1) {
   loading.value = true
   errorMessage.value = ''
@@ -108,17 +120,57 @@ async function uploadFiles() {
     body.append('access_mode', accessMode.value)
     selectedFiles.value.forEach((file) => body.append('files', file))
     const result = unwrap(await api.post('/files/upload', body))
-    const count = (result.items || []).length
-    const failed = result.failed || []
+    const uploaded = result.items || []
+    const failed = [...(result.failed || [])]
+    let attached = 0
+    if (selectedBaseId.value) {
+      for (const file of uploaded) {
+        if (!file.id) continue
+        try {
+          await api.post('/knowledge/manage/documents/attach-file', {
+            base_id: selectedBaseId.value,
+            file_id: file.id,
+          })
+          attached += 1
+        } catch (error) {
+          failed.push({ name: file.name || '文件', error: error?.message || '加入知识库失败' })
+        }
+      }
+    }
     selectedFiles.value = []
-    successMessage.value = '已保存 ' + count + ' 个文件' + (failed.length ? '，' + failed.length + ' 个失败' : '') + '。'
+    const baseName = knowledgeBases.value.find((base) => base.id === selectedBaseId.value)?.name
+    successMessage.value = '已保存 ' + uploaded.length + ' 个文件' +
+      (attached ? '，并已关联到知识库「' + (baseName || '所选知识库') + '」' : '') +
+      (failed.length ? '，' + failed.length + ' 个项目需要检查' : '') + '。'
     if (failed.length) errorMessage.value = failed.map((item) => item.name + '：' + item.error).join('；')
     await searchFiles(1)
+    if (attached) await loadKnowledgeBases()
   } catch (error) {
     errorMessage.value = error?.message || '上传文件失败'
   } finally { uploading.value = false }
 }
+async function attachFile(file) {
+  if (!selectedBaseId.value) {
+    errorMessage.value = '请先在上传区域选择目标知识库。'
+    return
+  }
+  try {
+    unwrap(await api.post('/knowledge/manage/documents/attach-file', {
+      base_id: selectedBaseId.value,
+      file_id: file.id,
+    }))
+    successMessage.value = '「' + file.name + '」已加入所选知识库，对话检索现在可以使用这份资料。'
+    await Promise.all([searchFiles(page.value), loadKnowledgeBases()])
+  } catch (error) {
+    errorMessage.value = error?.message || '加入知识库失败'
+  }
+}
+
 async function deleteFile(file) {
+  if (file.knowledge_bases) {
+    errorMessage.value = '该文件仍被知识库引用，请先从知识库中移除文档关联。'
+    return
+  }
   if (!window.confirm('确定删除「' + file.name + '」吗？原始文件也会从服务器移除。')) return
   try {
     unwrap(await api.post('/files/' + encodeURIComponent(file.id) + '/delete', {}))
@@ -128,14 +180,15 @@ async function deleteFile(file) {
 }
 async function initialize() {
   try { await loadProfile() } catch {}
+  try { await loadKnowledgeBases() } catch {}
   await searchFiles(1)
 }
 onMounted(initialize)
 </script>
 
 <template>
-  <main class="file-center-page">
-    <header class="file-center-header">
+  <div class="file-center-page" :class="{ 'file-center-embedded': props.embedded }">
+    <header v-if="!props.embedded" class="file-center-header">
       <div class="file-center-brand">
         <BrandMark class="file-center-brand-mark" />
         <div><p class="file-center-eyebrow">超凡 AI 问答平台 · 文件管理</p><h1>资料中心</h1><p>集中保存、检索和下载平台资料</p></div>
@@ -160,8 +213,20 @@ onMounted(initialize)
         <input ref="fileInput" type="file" multiple accept=".pdf,.doc,.docx,.xlsx,.xls,.pptx,.ppt,.txt,.md,.csv,.json,.html,.htm,.png,.jpg,.jpeg,.webp" @change="onFileChange" />
         <button class="file-center-quiet-button" type="button" @click="fileInput?.click()">选择文件</button>
       </div>
+      <div v-if="knowledgeBases.length" class="file-center-link-target">
+        <label>目标知识库
+          <select v-model="selectedBaseId">
+            <option value="">仅保存为知识文件</option>
+            <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">{{ base.name }}</option>
+          </select>
+        </label>
+        <small>选择知识库后，新上传文件会自动建立检索索引；也可将已有文件加入所选知识库。</small>
+      </div>
       <div v-if="selectedFiles.length" class="file-center-pending">
-        <div class="file-center-pending-heading"><strong>待上传 {{ selectedFiles.length }} 个文件</strong><label>文件权限<select v-model="accessMode"><option value="private">仅自己和管理员可见</option><option value="shared">所有登录用户可见</option></select></label></div>
+        <div class="file-center-pending-heading">
+          <strong>待上传 {{ selectedFiles.length }} 个文件</strong>
+          <label>文件权限<select v-model="accessMode"><option value="private">仅自己和管理员可见</option><option value="shared">所有登录用户可见</option></select></label>
+        </div>
         <div class="file-center-pending-list">
           <div v-for="(file,index) in selectedFiles" :key="file.name + file.size + file.lastModified" class="file-center-pending-item">
             <span>{{ file.name.split('.').pop().toUpperCase().slice(0,4) }}</span><strong :title="file.name">{{ file.name }}</strong><small>{{ formatBytes(file.size) }}</small><button type="button" @click="selectedFiles.splice(index,1)">×</button>
@@ -184,14 +249,21 @@ onMounted(initialize)
           <div class="file-center-result-main">
             <div class="file-center-result-title"><h3>{{ file.name }}</h3><span v-if="file.match_type === 'filename'" class="file-center-tag">文件名匹配</span><span v-else-if="file.match_type === 'content'" class="file-center-tag content">内容匹配</span><span v-if="file.access_mode === 'shared'" class="file-center-tag shared">共享</span></div>
             <p class="file-center-meta">{{ file.extension.toUpperCase().replace('.', '') }} · {{ formatBytes(file.size_bytes) }} · 上传者：{{ file.owner_username }} · {{ formatDate(file.created_at) }}</p>
+            <p v-if="file.knowledge_bases" class="file-center-linked-bases">已关联知识库：{{ file.knowledge_bases }}</p>
             <p v-if="file.snippet" class="file-center-snippet"><template v-for="(part,index) in snippetParts(file.snippet)" :key="index"><mark v-if="part.matched">{{ part.text }}</mark><span v-else>{{ part.text }}</span></template></p>
             <p v-if="file.extraction_status !== 'indexed'" class="file-center-extract-note">当前仅支持文件名检索：{{ file.extraction_error || '该格式暂未配置全文提取' }}</p>
           </div>
-          <div class="file-center-actions"><a v-if="file.can_preview" :href="fileURL(file,'preview')" target="_blank" rel="noopener">预览</a><a :href="fileURL(file,'download')" download>下载原文件</a><button v-if="file.can_delete" type="button" @click="deleteFile(file)">删除</button></div>
+          <div class="file-center-actions">
+            <a v-if="file.can_preview" :href="fileURL(file,'preview')" target="_blank" rel="noopener">预览</a>
+            <a :href="fileURL(file,'download')" download>下载原文件</a>
+            <button v-if="selectedBaseId" type="button" @click="attachFile(file)">加入所选知识库</button>
+            <button v-if="file.can_delete" type="button" @click="deleteFile(file)">删除</button>
+            <small v-else-if="file.knowledge_bases">已被知识库引用</small>
+          </div>
         </article>
       </div>
       <div v-if="totalPages > 1" class="file-center-pagination"><button :disabled="page <= 1 || loading" @click="searchFiles(page - 1)">上一页</button><span>第 {{ page }} / {{ totalPages }} 页</span><button :disabled="page >= totalPages || loading" @click="searchFiles(page + 1)">下一页</button></div>
     </section>
     <footer class="file-center-footer">原始文件与内容索引分开保存；删除资料会同时移除服务器原文件。</footer>
-  </main>
+  </div>
 </template>

@@ -321,7 +321,7 @@ async function deleteDocument(document) {
   clearMessages()
   try {
     assertSuccess(await api.post('/knowledge/manage/documents/delete', { id: document.id }))
-    successMessage.value = '文档已删除。'
+    successMessage.value = '文档已从知识库移除，原始文件仍保留在知识文件中。'
     await loadBases()
   } catch (error) {
     errorMessage.value = error?.message || '删除文档失败'
@@ -369,6 +369,11 @@ function formatDate(value) {
   if (!value) return '-'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString()
+}
+
+function originalFileURL(document) {
+  const base = (window.g?.baseURL || '/api').replace(/\/$/, '')
+  return base + '/files/' + encodeURIComponent(document.file_id) + '/download'
 }
 
 onMounted(async () => {
@@ -495,7 +500,7 @@ onMounted(async () => {
           <div class="knowledge-upload">
             <label class="knowledge-file-picker">
               选择文档
-              <input ref="fileInput" type="file" multiple accept=".txt,.md,.csv,.json,.html,.htm,.pdf,.docx" :disabled="uploading" @change="handleFileChange" />
+              <input ref="fileInput" type="file" multiple accept=".txt,.md,.csv,.json,.html,.htm,.pdf,.docx,.xlsx,.pptx" :disabled="uploading" @change="handleFileChange" />
             </label>
             <span>{{ selectedFiles.length ? selectedFiles.map((file) => file.name).join('、') : '支持 TXT、MD、CSV、JSON、HTML、PDF、DOCX，单次最多 20 个文件' }}</span>
             <button class="admin-primary" type="button" :disabled="uploading || !selectedFiles.length" @click="uploadFiles">
@@ -505,7 +510,7 @@ onMounted(async () => {
 
           <div class="admin-table-wrap">
             <table class="admin-table">
-              <thead><tr><th>文档名称</th><th>大小</th><th>文本分块</th><th>上传时间</th><th>操作</th></tr></thead>
+              <thead><tr><th>文档名称</th><th>大小</th><th>文本分块</th><th>上传时间</th><th>原文件与操作</th></tr></thead>
               <tbody>
                 <tr v-for="document in documents" :key="document.id">
                   <td>{{ document.filename }}</td>
@@ -513,8 +518,10 @@ onMounted(async () => {
                   <td>{{ document.chunk_count }}</td>
                   <td>{{ formatDate(document.created_at) }}</td>
                   <td class="knowledge-document-actions">
+                    <a v-if="document.file_id" class="admin-text-button" :href="originalFileURL(document)" download>下载原文件</a>
+                    <span v-else class="knowledge-original-missing" title="旧版知识库文档未保存原始文件">原文件需重新上传</span>
                     <button class="admin-text-button" type="button" :disabled="chunksLoading" @click="loadDocumentChunks(document)">查看分块</button>
-                    <button class="admin-text-button danger" type="button" :disabled="saving" @click="deleteDocument(document)">删除</button>
+                    <button class="admin-text-button danger" type="button" :disabled="saving" @click="deleteDocument(document)">移除</button>
                   </td>
                 </tr>
                 <tr v-if="!documents.length"><td colspan="5" class="admin-empty">暂无文档，请上传需要检索的资料。</td></tr>

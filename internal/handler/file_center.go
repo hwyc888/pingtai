@@ -256,8 +256,14 @@ func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 	conditions := []string{"1=1"}
 	args := make([]any, 0, 16)
 	if !admin {
-		conditions = append(conditions, "(owner_user_id=? OR access_mode='shared')")
-		args = append(args, identity.UserID)
+		conditions = append(conditions, "(owner_user_id=? OR access_mode='shared' OR EXISTS ("+
+			"SELECT 1 FROM ai_knowledge_document_file kdf "+
+			"LEFT JOIN ai_knowledge_base_identity kbi ON kbi.base_id=kdf.base_id "+
+			"LEFT JOIN ai_knowledge_base_identity_member kbim ON kbim.base_id=kdf.base_id AND kbim.user_id=? "+
+			"WHERE kdf.file_id=platform_file.id AND ("+
+			"COALESCE(kbi.owner_user_id,'')=? OR COALESCE(kbi.access_mode,'private')='shared' OR "+
+			"(COALESCE(kbi.access_mode,'private')='assigned' AND kbim.user_id IS NOT NULL))))")
+		args = append(args, identity.UserID, identity.UserID, identity.UserID)
 	}
 	if extension != "" && extension != "all" {
 		conditions = append(conditions, "extension=?")
@@ -281,7 +287,9 @@ func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 	queryArgs := append(append([]any(nil), args...), pageSize, (page-1)*pageSize)
 	rows, err := h.DB.QueryContext(r.Context(),
 		"SELECT id,original_name,content_type,extension,size_bytes,sha256,extraction_status,extraction_error,"+
-			"owner_user_id,owner_username,owner_provider,access_mode,created_at,updated_at,extracted_text "+
+			"owner_user_id,owner_username,owner_provider,access_mode,created_at,updated_at,extracted_text,"+
+			"COALESCE((SELECT group_concat(DISTINCT b.name) FROM ai_knowledge_document_file kdf "+
+			"JOIN ai_knowledge_base b ON b.id=kdf.base_id WHERE kdf.file_id=platform_file.id),'') "+
 			"FROM platform_file WHERE "+where+" ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?",
 		queryArgs...,
 	)
@@ -293,10 +301,12 @@ func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var item platformFile
+		var knowledgeBases string
 		if err := rows.Scan(
 			&item.ID, &item.OriginalName, &item.ContentType, &item.Extension, &item.SizeBytes, &item.SHA256,
 			&item.ExtractionStatus, &item.ExtractionError, &item.OwnerUserID, &item.OwnerUsername,
 			&item.OwnerProvider, &item.AccessMode, &item.CreatedAt, &item.UpdatedAt, &item.ExtractedText,
+			&knowledgeBases,
 		); err != nil {
 			writeError(w, http.StatusInternalServerError, "读取文件检索结果失败")
 			return
@@ -322,8 +332,8 @@ func (h *Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 			"owner_user_id": item.OwnerUserID, "owner_username": item.OwnerUsername,
 			"owner_provider": item.OwnerProvider, "access_mode": item.AccessMode,
 			"created_at": item.CreatedAt, "updated_at": item.UpdatedAt,
-			"match_type": matchType, "snippet": snippet,
-			"can_delete": admin || item.OwnerUserID == identity.UserID,
+			"match_type": matchType, "snippet": snippet, "knowledge_bases": knowledgeBases,
+			"can_delete": (admin || item.OwnerUserID == identity.UserID) && knowledgeBases == "",
 			"can_preview": previewableFileExtension(item.Extension),
 		})
 	}
@@ -492,13 +502,14 @@ func (h *Handler) fileRecord(ctx context.Context, id string) (platformFile, erro
 	var item platformFile
 	err := h.DB.QueryRowContext(ctx,
 		"SELECT id,storage_key,original_name,content_type,extension,size_bytes,sha256,extraction_status,"+
-			"owner_user_id,owner_username,owner_provider,access_mode,created_at,updated_at "+
+			"owner_user_id,owner_username,owner_provider,access_mode,created_at,updated_at,extracted_text "+
 			"FROM platform_file WHERE id=?",
 		id,
 	).Scan(
 		&item.ID, &item.StorageKey, &item.OriginalName, &item.ContentType, &item.Extension,
 		&item.SizeBytes, &item.SHA256, &item.ExtractionStatus, &item.OwnerUserID,
 		&item.OwnerUsername, &item.OwnerProvider, &item.AccessMode, &item.CreatedAt, &item.UpdatedAt,
+		&item.ExtractedText,
 	)
 	return item, err
 }
@@ -511,12 +522,21 @@ func (h *Handler) serveStoredFile(w http.ResponseWriter, r *http.Request, previe
 	}
 	id := strings.TrimSpace(r.PathValue("id"))
 	item, err := h.fileRecord(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !fileAccessAllowed(item.OwnerUserID, item.AccessMode, identity.UserID, h.isKnowledgeAdmin(r.Context(), identity))) {
+	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "文件不存在或无权访问")
 		return
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取文件信息失败")
+		return
+	}
+	canAccess, accessErr := h.canAccessStoredFile(r.Context(), identity, item)
+	if accessErr != nil {
+		writeError(w, http.StatusInternalServerError, "验证文件权限失败")
+		return
+	}
+	if !canAccess {
+		writeError(w, http.StatusNotFound, "文件不存在或无权访问")
 		return
 	}
 	if !validFileStorageKey(item.StorageKey) {
@@ -615,6 +635,15 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if !admin && ownerUserID != identity.UserID {
 		writeError(w, http.StatusForbidden, "只有文件上传者或管理员可以删除文件")
+		return
+	}
+	var knowledgeReferences int
+	if err := tx.QueryRowContext(r.Context(), "SELECT COUNT(*) FROM ai_knowledge_document_file WHERE file_id=?", id).Scan(&knowledgeReferences); err != nil {
+		writeError(w, http.StatusInternalServerError, "检查知识库关联失败")
+		return
+	}
+	if knowledgeReferences > 0 {
+		writeError(w, http.StatusConflict, "该文件仍被知识库引用，请先从知识库中移除文档关联")
 		return
 	}
 	if !validFileStorageKey(storageKey) {

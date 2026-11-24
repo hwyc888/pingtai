@@ -9,7 +9,7 @@ const router = createRouter({
     { path: '/IntelligentAI', name: 'chat', component: () => import('./views/ChatView.vue') },
     { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue') },
     { path: '/my-knowledge', name: 'my-knowledge', component: () => import('./views/MyKnowledgeView.vue') },
-    { path: '/files', name: 'files', component: () => import('./views/FileCenterView.vue') },
+    { path: '/files', name: 'files', redirect: '/my-knowledge' },
     { path: '/:pathMatch(.*)*', redirect: '/login' },
   ],
 })

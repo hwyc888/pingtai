@@ -89,19 +89,25 @@ Open **平台管理 → 知识库管理** to create knowledge bases, upload docu
 
 Documents are stored and indexed locally in SQLite. The first implementation uses Chinese/English keyword matching over overlapping text chunks; it does not require an external embedding API and is not vector-semantic search. Supported uploads are TXT, MD, CSV, JSON, HTML, DOCX and PDF. PDF extraction uses Poppler's `pdftotext`; on Ubuntu install it with `sudo apt-get install poppler-utils`. If it is unavailable, PDF uploads return a clear extraction error rather than silently indexing empty content. DOCX is parsed directly by the Go application.
 
-### File center
+### Unified knowledge center and file center (1.1.1)
 
-Open **资料中心** from the chat history drawer. It stores the original uploaded file bytes in a private `files/` directory beside the configured SQLite database, while SQLite stores the file ID, owner identity, visibility, SHA-256, metadata and extracted-text search index. Search supports filename matches and full-text matches for TXT, MD, CSV, JSON, HTML, DOCX, XLSX and PPTX. PDF full-text extraction uses Poppler `pdftotext`; if the tool is unavailable, the original PDF is still saved and remains searchable by filename, with the extraction limitation shown in the UI. Legacy DOC/XLS/PPT and images are retained as original files and are filename-searchable; OCR and legacy binary office parsing are not included in this release.
+Open **知识中心** from the chat history drawer, or from **平台管理 → 知识中心** as an administrator. The same workspace has two tabs: **知识库** manages knowledge collections and their retrieval permissions; **知识文件** searches, previews, and downloads original files.
 
-Files are private to the uploader by default. The uploader can choose shared visibility for all signed-in users; administrators can search, download and delete all files. Downloads and previews re-check the current user's identity and file permissions. Duplicate uploads by the same owner are detected by SHA-256 and reuse the existing file record. Back up the SQLite database and its sibling `files/` directory together; restoring only one side is incomplete.
+Every document uploaded from a knowledge base is now saved once as an original file in the shared file store and linked to its knowledge-base document/chunks by a stable file ID. It immediately appears in **知识文件**, can be found by filename or extracted body text, and can be downloaded in its original format. Conversely, a file uploaded in **知识文件** can be added to a selected knowledge base; after indexing, it is available to chat retrieval whenever that knowledge base is selected in the conversation. One file can be linked to more than one knowledge base without duplicating its original bytes.
 
-Knowledge-base access is configured in **平台管理 → 知识库管理**:
+The file center stores original file bytes in a private `files/` directory beside the configured SQLite database. SQLite stores the file ID, owner identity, visibility, SHA-256, metadata, extracted-text search index, and knowledge-base links. Search supports filename and full-text matches for TXT, MD, CSV, JSON, HTML, DOCX, XLSX and PPTX. PDF full-text extraction uses Poppler `pdftotext`; if the tool is unavailable, the original PDF is still saved and remains searchable by filename. Legacy DOC/XLS/PPT and images are retained as original files and are filename-searchable; OCR and legacy binary Office parsing are not included in this release.
+
+Files are private to the uploader by default. The uploader can choose shared visibility for all signed-in users; administrators can search, download and manage all files. Files linked to a knowledge base are also visible to users who have permission to use that base. Downloads and previews re-check the current user's identity and file permissions. Duplicate uploads by the same owner are detected by SHA-256 and reuse the existing file record. A file cannot be deleted while a knowledge base still references it. Removing a document from a knowledge base removes that retrieval link but keeps the original file in **知识文件**. Older knowledge-base documents created before this integration did not retain their original bytes; they must be uploaded again to enable original-file downloads.
+
+Back up the SQLite database and its sibling `files/` directory together; restoring only one side is incomplete.
+
+Knowledge-base access is configured in **知识中心 → 知识库**:
 
 - **公共**: every authenticated user can select and retrieve the enabled knowledge base.
 - **指定用户**: only the owner, administrators, and explicitly listed accounts can select and retrieve it.
 - **个人私有**: only the owner and administrators can access it.
 
-The owner and administrators can upload, delete, and manage documents. Assigned users receive retrieval-only access. The **我的知识库** page creates private knowledge bases; administrators set shared/assigned/private access in the platform-management tab. Existing knowledge bases are migrated as private with their current creator retained as owner, so the migration does not broaden access to previously private documents.
+The owner and administrators can upload, delete, and manage documents. Assigned users receive retrieval-only access. The **知识中心 → 知识库** tab creates and manages knowledge bases; administrators can set shared/assigned/private access from the same workspace. Existing knowledge bases are migrated as private with their current creator retained as owner, so the migration does not broaden access to previously private documents.
 
 ## Login settings and school SSO
 

@@ -13,6 +13,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -510,7 +511,12 @@ func (h *Handler) ListLocalKnowledgeDocuments(w http.ResponseWriter, r *http.Req
 	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
-	rows, err := h.DB.QueryContext(r.Context(), "SELECT id,filename,content_type,size_bytes,chunk_count,created_by,created_at,updated_at FROM ai_knowledge_document WHERE base_id=? ORDER BY created_at DESC", baseID)
+	rows, err := h.DB.QueryContext(r.Context(),
+		"SELECT d.id,d.filename,d.content_type,d.size_bytes,d.chunk_count,d.created_by,d.created_at,d.updated_at,COALESCE(kdf.file_id,'') "+
+			"FROM ai_knowledge_document d LEFT JOIN ai_knowledge_document_file kdf ON kdf.document_id=d.id "+
+			"WHERE d.base_id=? ORDER BY d.created_at DESC",
+		baseID,
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取知识库文档失败")
 		return
@@ -518,16 +524,16 @@ func (h *Handler) ListLocalKnowledgeDocuments(w http.ResponseWriter, r *http.Req
 	defer rows.Close()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
-		var id, filename, contentType, createdBy, createdAt, updatedAt string
+		var id, filename, contentType, createdBy, createdAt, updatedAt, fileID string
 		var sizeBytes int64
 		var chunkCount int
-		if err := rows.Scan(&id, &filename, &contentType, &sizeBytes, &chunkCount, &createdBy, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &filename, &contentType, &sizeBytes, &chunkCount, &createdBy, &createdAt, &updatedAt, &fileID); err != nil {
 			writeError(w, http.StatusInternalServerError, "读取知识库文档失败")
 			return
 		}
 		items = append(items, map[string]any{
 			"id": id, "filename": filename, "content_type": contentType,
-			"size_bytes": sizeBytes, "chunk_count": chunkCount,
+			"size_bytes": sizeBytes, "chunk_count": chunkCount, "file_id": fileID,
 			"created_by": createdBy, "created_at": createdAt, "updated_at": updatedAt,
 		})
 	}
@@ -550,6 +556,11 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 	if !h.requireKnowledgeBaseAccess(w, r, baseID) {
 		return
 	}
+	identity, identityOK := h.identityForRequest(r)
+	if !identityOK || identity.UserID == "" {
+		writeError(w, http.StatusUnauthorized, "请先登录")
+		return
+	}
 	if r.MultipartForm == nil {
 		writeError(w, http.StatusBadRequest, "没有上传文件")
 		return
@@ -567,10 +578,15 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 		filename string
 		contentType string
 		size int64
+		data []byte
 		content string
 		chunks []string
 	}
 	documents := make([]parsedDocument, 0, len(files))
+	maxBytes := int64(100 << 20)
+	if h.Config != nil && h.Config.MaxUploadBytes > 0 {
+		maxBytes = h.Config.MaxUploadBytes
+	}
 	for _, header := range files {
 		if header == nil || strings.TrimSpace(header.Filename) == "" {
 			continue
@@ -580,24 +596,25 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusBadRequest, "读取上传文件失败")
 			return
 		}
-		data, readErr := io.ReadAll(io.LimitReader(file, h.Config.MaxUploadBytes+1))
+		data, readErr := io.ReadAll(io.LimitReader(file, maxBytes+1))
 		_ = file.Close()
 		if readErr != nil {
 			writeError(w, http.StatusBadRequest, "读取上传文件失败")
 			return
 		}
-		if int64(len(data)) > h.Config.MaxUploadBytes {
+		if int64(len(data)) > maxBytes {
 			writeError(w, http.StatusRequestEntityTooLarge, "文件超过平台上传大小限制")
 			return
 		}
-		content, err := extractKnowledgeText(r.Context(), header.Filename, data)
+		filename := cleanUploadedFilename(header.Filename)
+		content, err := extractKnowledgeText(r.Context(), filename, data)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, header.Filename+": "+err.Error())
+			writeError(w, http.StatusBadRequest, filename+": "+err.Error())
 			return
 		}
 		chunks := splitKnowledgeText(content)
 		if len(chunks) == 0 {
-			writeError(w, http.StatusBadRequest, header.Filename+": 文档没有可索引的文本内容")
+			writeError(w, http.StatusBadRequest, filename+": 文档没有可索引的文本内容")
 			return
 		}
 		id, err := util.NewID()
@@ -605,37 +622,97 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusInternalServerError, "生成文档 ID 失败")
 			return
 		}
-		contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(header.Filename)))
+		contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
 		documents = append(documents, parsedDocument{
-			id: id, filename: filepath.Base(header.Filename), contentType: contentType,
-			size: int64(len(data)), content: content, chunks: chunks,
+			id: id, filename: filename, contentType: contentType,
+			size: int64(len(data)), data: data, content: content, chunks: chunks,
 		})
 	}
 	if len(documents) == 0 {
 		writeError(w, http.StatusBadRequest, "没有有效的文档")
 		return
 	}
-	identity, _ := h.identityForRequest(r)
-	now := time.Now().UTC().Format(time.RFC3339)
+	directory, err := h.ensureFileStorageDir()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "初始化原始文件存储目录失败")
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	tx, err := h.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "保存文档失败")
 		return
 	}
-	defer tx.Rollback()
+	committed := false
+	createdStoragePaths := make([]string, 0, len(documents))
+	defer func() {
+		_ = tx.Rollback()
+		if !committed {
+			for _, path := range createdStoragePaths {
+				_ = os.Remove(path)
+			}
+		}
+	}()
+	items := make([]map[string]any, 0, len(documents))
 	for _, document := range documents {
-		if _, err := tx.ExecContext(r.Context(), "INSERT INTO ai_knowledge_document (id,base_id,filename,content_type,size_bytes,content_text,chunk_count,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-			document.id, baseID, document.filename, document.contentType, document.size, document.content, len(document.chunks), identity.Username, now, now); err != nil {
+		fileID, createdPath, persistErr := h.persistKnowledgeOriginalFileTx(
+			r.Context(), tx, directory, identity, document.filename, document.contentType,
+			document.data, document.content, now,
+		)
+		if persistErr != nil {
+			writeError(w, http.StatusInternalServerError, "保存原始文件失败："+persistErr.Error())
+			return
+		}
+		if createdPath != "" {
+			createdStoragePaths = append(createdStoragePaths, createdPath)
+		}
+		var existingDocumentID string
+		duplicateErr := tx.QueryRowContext(r.Context(),
+			"SELECT document_id FROM ai_knowledge_document_file WHERE base_id=? AND file_id=?",
+			baseID, fileID,
+		).Scan(&existingDocumentID)
+		if duplicateErr == nil {
+			items = append(items, map[string]any{
+				"id": existingDocumentID, "filename": document.filename, "file_id": fileID,
+				"size_bytes": document.size, "duplicate": true,
+			})
+			continue
+		}
+		if !errors.Is(duplicateErr, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, "检查知识库文件关联失败")
+			return
+		}
+		if _, err := tx.ExecContext(r.Context(),
+			"INSERT INTO ai_knowledge_document (id,base_id,filename,content_type,size_bytes,content_text,chunk_count,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+			document.id, baseID, document.filename, document.contentType, document.size,
+			document.content, len(document.chunks), identity.Username, now, now,
+		); err != nil {
 			writeError(w, http.StatusInternalServerError, "保存文档失败")
 			return
 		}
+		if _, err := tx.ExecContext(r.Context(),
+			"INSERT INTO ai_knowledge_document_file (document_id,base_id,file_id,created_at) VALUES (?,?,?,?)",
+			document.id, baseID, fileID, now,
+		); err != nil {
+			writeError(w, http.StatusInternalServerError, "关联原始文件失败")
+			return
+		}
 		for index, chunk := range document.chunks {
-			if _, err := tx.ExecContext(r.Context(), "INSERT INTO ai_knowledge_chunk (base_id,document_id,chunk_index,content,created_at) VALUES (?,?,?,?,?)",
-				baseID, document.id, index, chunk, now); err != nil {
+			if _, err := tx.ExecContext(r.Context(),
+				"INSERT INTO ai_knowledge_chunk (base_id,document_id,chunk_index,content,created_at) VALUES (?,?,?,?,?)",
+				baseID, document.id, index, chunk, now,
+			); err != nil {
 				writeError(w, http.StatusInternalServerError, "建立文档索引失败")
 				return
 			}
 		}
+		items = append(items, map[string]any{
+			"id": document.id, "filename": document.filename, "file_id": fileID,
+			"size_bytes": document.size, "chunk_count": len(document.chunks), "duplicate": false,
+		})
 	}
 	if _, err := tx.ExecContext(r.Context(), "UPDATE ai_knowledge_base SET updated_at=? WHERE id=?", now, baseID); err != nil {
 		writeError(w, http.StatusInternalServerError, "更新知识库时间失败")
@@ -645,13 +722,7 @@ func (h *Handler) UploadLocalKnowledgeDocuments(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "保存文档失败")
 		return
 	}
-	items := make([]map[string]any, 0, len(documents))
-	for _, document := range documents {
-		items = append(items, map[string]any{
-			"id": document.id, "filename": document.filename,
-			"size_bytes": document.size, "chunk_count": len(document.chunks),
-		})
-	}
+	committed = true
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "indexed", "data": items})
 }
 
