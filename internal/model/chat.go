@@ -25,6 +25,15 @@ type MessageAttachment struct {
 	Type string `json:"type"`
 }
 
+type MessageKnowledgeSource struct {
+	FileID     string `json:"file_id,omitempty"`
+	DocumentID string `json:"document_id"`
+	BaseID     string `json:"base_id"`
+	BaseName   string `json:"base_name"`
+	FileName   string `json:"file_name"`
+	Snippet    string `json:"snippet"`
+}
+
 type Message struct {
 	ID               int64     "json:\"id\""
 	ConversationID   string    "json:\"conversation_id\""
@@ -33,5 +42,6 @@ type Message struct {
 	Content          string    "json:\"content\""
 	ReasoningContent string    "json:\"reasoning_content,omitempty\""
 	Attachments      []MessageAttachment `json:"attachments,omitempty"`
+	KnowledgeSources []MessageKnowledgeSource `json:"knowledge_sources,omitempty"`
 	CreatedAt        time.Time "json:\"created_at\""
 }

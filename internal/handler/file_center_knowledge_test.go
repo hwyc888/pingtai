@@ -80,9 +80,13 @@ func TestKnowledgeUploadAppearsInFileCenterAndCanBeUsedByChat(t *testing.T) {
 	}
 
 	bobIdentity := middleware.Identity{Username: "bob", UserID: identities["bob"], Provider: "local"}
-	prompt, err := app.knowledgePrompt(context.Background(), bobIdentity, "shared-kb", "课程安排")
+	prompt, sources, err := app.knowledgePromptWithSources(context.Background(), bobIdentity, "shared-kb", "课程安排")
 	if err != nil || !strings.Contains(prompt, "课程安排") || !strings.Contains(prompt, "教学实施方案.txt") {
 		t.Fatalf("chat RAG did not recognize the uploaded knowledge document: prompt=%q err=%v", prompt, err)
+	}
+	if len(sources) != 1 || sources[0].FileID != fileID || sources[0].DocumentID != documentID ||
+		sources[0].BaseName != "shared-kb" || !strings.Contains(sources[0].Snippet, "课程安排") {
+		t.Fatalf("chat RAG did not return the original file source: %#v", sources)
 	}
 
 	blockedDelete := callFileCenter(t, app, aliceToken, http.MethodPost,

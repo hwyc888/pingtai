@@ -386,7 +386,15 @@ func TestChatAttachmentReferencesPersistAndContextKeepsText(t *testing.T) {
 	if err := repo.SaveMessageContent(ctx, userMessage.ID, "请总结文档\n\n附件 制度.txt:\n课程安排"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repo.InsertMessage(ctx, "conversation-files", "chat-files", "assistant", "好的", ""); err != nil {
+	assistantMessage, err := repo.InsertMessage(ctx, "conversation-files", "chat-files", "assistant", "好的", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := []model.MessageKnowledgeSource{{
+		FileID: "file-1", DocumentID: "doc-1", BaseID: "base-1",
+		BaseName: "学校规章", FileName: "制度.txt", Snippet: "课程安排与教学管理",
+	}}
+	if err := repo.SaveMessageKnowledgeSources(ctx, assistantMessage.ID, sources); err != nil {
 		t.Fatal(err)
 	}
 
@@ -400,13 +408,17 @@ func TestChatAttachmentReferencesPersistAndContextKeepsText(t *testing.T) {
 	if items[0].Attachments[0].Name != "制度.txt" || items[0].Attachments[1].Type != "image" {
 		t.Fatalf("attachment references changed: %#v", items[0].Attachments)
 	}
-	found, err := repo.FindMessage(ctx, userMessage.ID, "conversation-files", "local-1")
-	if err != nil || len(found.Attachments) != 2 {
-		t.Fatalf("message lookup lost attachments: %#v, %v", found, err)
+	if len(items[1].KnowledgeSources) != 1 || items[1].KnowledgeSources[0].FileID != "file-1" {
+		t.Fatalf("assistant knowledge sources were not restored: %#v", items[1].KnowledgeSources)
+	}
+	found, err := repo.FindMessage(ctx, assistantMessage.ID, "conversation-files", "local-1")
+	if err != nil || len(found.KnowledgeSources) != 1 || found.KnowledgeSources[0].FileID != "file-1" {
+		t.Fatalf("message lookup lost knowledge sources: %#v, %v", found, err)
 	}
 	byChat, err := repo.MessagesByChat(ctx, "chat-files", "conversation-files", "local-1")
-	if err != nil || len(byChat) != 2 || len(byChat[0].Attachments) != 2 {
-		t.Fatalf("chat message list lost attachments: %#v, %v", byChat, err)
+	if err != nil || len(byChat) != 2 || len(byChat[0].Attachments) != 2 ||
+		len(byChat[1].KnowledgeSources) != 1 || byChat[1].KnowledgeSources[0].FileID != "file-1" {
+		t.Fatalf("chat message list lost attachments or knowledge sources: %#v, %v", byChat, err)
 	}
 	contextMessages, err := repo.ContextMessages(ctx, "conversation-files", 10)
 	if err != nil || len(contextMessages) != 2 {

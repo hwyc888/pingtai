@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"pingtai/internal/model"
 )
 
 // streamModelChat proxies OpenAI-compatible SSE deltas to the browser while
@@ -18,6 +20,12 @@ import (
 func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client interface {
 	Do(context.Context, []byte) (*http.Response, error)
 }, chatID, conversationID string, userMessageID int64, body []byte) {
+	h.streamModelChatWithSources(w, r, client, chatID, conversationID, userMessageID, body, nil)
+}
+
+func (h *Handler) streamModelChatWithSources(w http.ResponseWriter, r *http.Request, client interface {
+	Do(context.Context, []byte) (*http.Response, error)
+}, chatID, conversationID string, userMessageID int64, body []byte, knowledgeSources []model.MessageKnowledgeSource) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -35,10 +43,15 @@ func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 		defer cancel()
 		if answer.Len() > 0 || reasoning.Len() > 0 {
-			if _, err := h.Chats.InsertMessage(ctx, conversationID, chatID, "assistant", answer.String(), reasoning.String()); err != nil {
+			assistantMessage, err := h.Chats.InsertMessage(ctx, conversationID, chatID, "assistant", answer.String(), reasoning.String())
+			if err != nil {
 				log.Printf("save streamed assistant message %s: %v", chatID, err)
 				finalStatus = "failed"
 				message = "保存模型回复失败"
+			} else if err := h.Chats.SaveMessageKnowledgeSources(ctx, assistantMessage.ID, knowledgeSources); err != nil {
+				log.Printf("save streamed knowledge sources %s: %v", chatID, err)
+				finalStatus = "failed"
+				message = "保存知识库来源失败"
 			}
 		}
 		if err := h.Chats.UpdateChat(ctx, chatID, finalStatus, message); err != nil {
@@ -123,7 +136,7 @@ func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client
 			emit("reasoning", map[string]any{"content": reasoningText})
 		}
 		status = persist("completed", "")
-		emit("done", map[string]any{"id": chatID, "status": status})
+		emit("done", map[string]any{"id": chatID, "status": status, "knowledge_sources": knowledgeSources})
 		return
 	}
 
@@ -206,7 +219,7 @@ func (h *Handler) streamModelChat(w http.ResponseWriter, r *http.Request, client
 		emit("done", map[string]any{"id": chatID, "status": status})
 	default:
 		status = persist(status, "")
-		emit("done", map[string]any{"id": chatID, "status": status})
+		emit("done", map[string]any{"id": chatID, "status": status, "knowledge_sources": knowledgeSources})
 	}
 }
 
