@@ -248,7 +248,7 @@ func (r *ChatRepository) MessagesByChat(ctx context.Context, chatID, conversatio
 }
 
 func (r *ChatRepository) FindMessage(ctx context.Context, id int64, conversationID, userID string) (model.Message, error) {
-	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]') " +
+	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]'),COALESCE((SELECT s.sources_json FROM ai_message_knowledge_source s WHERE s.message_id=m.id),'[]') " +
 		"FROM ai_message m INNER JOIN ai_conversation v ON v.id=m.conversation_id " +
 		"WHERE m.id=? AND m.conversation_id=? AND v.user_id=? LIMIT 1"
 	return scanMessageWithAttachments(r.db.QueryRowContext(ctx, query, id, conversationID, userID))
