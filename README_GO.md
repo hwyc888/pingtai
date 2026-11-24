@@ -89,9 +89,11 @@ Open **平台管理 → 知识库管理** to create knowledge bases, upload docu
 
 Documents are stored and indexed locally in SQLite. The first implementation uses Chinese/English keyword matching over overlapping text chunks; it does not require an external embedding API and is not vector-semantic search. Supported uploads are TXT, MD, CSV, JSON, HTML, DOCX and PDF. PDF extraction uses Poppler's `pdftotext`; on Ubuntu install it with `sudo apt-get install poppler-utils`. If it is unavailable, PDF uploads return a clear extraction error rather than silently indexing empty content. DOCX is parsed directly by the Go application.
 
-### Unified knowledge center and file center (1.1.1)
+### Unified knowledge center and file center (1.1.2)
 
 Open **知识中心** from the chat history drawer, or from **平台管理 → 知识中心** as an administrator. The same workspace has two tabs: **知识库** manages knowledge collections and their retrieval permissions; **知识文件** searches, previews, and downloads original files.
+
+In chat, click the **知识库** toggle above the composer to enable or disable retrieval; no `@知识库` mention is required. Select the authorized knowledge base from the adjacent selector. When a response uses retrieved documents, the assistant message displays the matched source files, their knowledge-base name and matched text snippet. Each source card offers a permission-checked **下载原文件** link when the original upload is archived. These source references are persisted with the assistant message and reappear when opening conversation history.
 
 Every document uploaded from a knowledge base is now saved once as an original file in the shared file store and linked to its knowledge-base document/chunks by a stable file ID. It immediately appears in **知识文件**, can be found by filename or extracted body text, and can be downloaded in its original format. Conversely, a file uploaded in **知识文件** can be added to a selected knowledge base; after indexing, it is available to chat retrieval whenever that knowledge base is selected in the conversation. One file can be linked to more than one knowledge base without duplicating its original bytes.
 

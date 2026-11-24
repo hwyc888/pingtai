@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api'
 import BrandMark from '../components/BrandMark.vue'
@@ -50,13 +50,6 @@ const composerExpanded = computed(() =>
 const selectedKnowledgeBase = computed(() =>
   knowledgeBases.value.find((item) => item.id === selectedKnowledgeBaseId.value) || null
 )
-const knowledgeMentionSelected = ref(false)
-const showMentionMenu = ref(false)
-const mentionQuery = ref('')
-const mentionStart = ref(-1)
-const mentionEnd = ref(-1)
-const knowledgeMentionActive = computed(() => knowledgeMentionSelected.value && draft.value.includes('@知识库'))
-const showKnowledgeContext = computed(() => knowledgeMentionActive.value && knowledgeBases.value.length > 0)
 
 function fileReference(file) {
   return { name: file.name, size: file.size, type: isImageFile(file) ? 'image' : 'file' }
@@ -66,6 +59,22 @@ function formatFileSize(bytes) {
   const size = Number(bytes) || 0
   return size >= 1048576 ? (size / 1048576).toFixed(1) + ' MB'
     : size >= 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B'
+}
+
+function knowledgeSourceDownloadURL(source) {
+  if (!source?.file_id) return ''
+  const base = (window.g?.baseURL || '/api').replace(/\/$/, '')
+  return base + '/files/' + encodeURIComponent(source.file_id) + '/download'
+}
+
+function toggleKnowledge() {
+  if (isSending.value) return
+  if (!knowledgeBases.value.length) {
+    pageError.value = '当前账号暂无可用知识库，请先创建知识库或联系管理员授权。'
+    return
+  }
+  knowledgeEnabled.value = !knowledgeEnabled.value
+  pageError.value = ''
 }
 
 function assertSuccess(result) {
@@ -320,6 +329,7 @@ async function openConversation(item) {
         content: normalizeContent(message.content),
         reasoning_content: normalizeContent(message.reasoning_content),
         attachments: Array.isArray(message.attachments) ? message.attachments : [],
+        knowledge_sources: Array.isArray(message.knowledge_sources) ? message.knowledge_sources : [],
         pending: false,
       }))
     conversationId.value = item.id
@@ -389,13 +399,12 @@ async function clearAllHistory() {
 
 async function sendMessage(text = draft.value, options = {}) {
   const rawContent = String(text || '')
-  const knowledgeMentionRequested = knowledgeMentionSelected.value &&
-    rawContent.includes('@知识库') && knowledgeBases.value.length > 0
-  const contentWithoutMention = knowledgeMentionRequested
-    ? rawContent.replace(/@知识库/g, ' ')
-    : rawContent
-  const normalizedContent = contentWithoutMention.replace(/[ \t]{2,}/g, ' ').trim()
-  const useKnowledge = knowledgeMentionRequested && knowledgeEnabled.value && Boolean(selectedKnowledgeBaseId.value)
+  const normalizedContent = rawContent.replace(/[ \t]{2,}/g, ' ').trim()
+  const useKnowledge = knowledgeEnabled.value && Boolean(selectedKnowledgeBaseId.value)
+  if (knowledgeEnabled.value && !useKnowledge) {
+    pageError.value = '请先选择要检索的知识库。'
+    return
+  }
   const content = normalizedContent ||
     (attachments.value.length ? '请阅读并分析附件内容。' : useKnowledge ? '请根据所选知识库回答我的问题。' : '')
   if (!content || isSending.value) return
@@ -446,7 +455,7 @@ async function sendMessage(text = draft.value, options = {}) {
   })
   const assistantIndex = messages.value.push({
     id: 'assistant-' + Date.now(), role: 'assistant', content: '', reasoning_content: '',
-    pending: true, stopped: false,
+    pending: true, stopped: false, knowledge_sources: [],
   }) - 1
   if (!options.regenerate) { draft.value = ''; attachments.value = []; nextTick(resizeComposer) }
   scrollToBottom()
@@ -487,6 +496,7 @@ async function sendMessage(text = draft.value, options = {}) {
         chatId = data.id || chatId
         if (data.status === 'stopped') messages.value[assistantIndex].stopped = true
         if (data.status === 'failed') messages.value[assistantIndex].failed = true
+        messages.value[assistantIndex].knowledge_sources = Array.isArray(data.knowledge_sources) ? data.knowledge_sources : []
       } else if (event === 'error') {
         throw new Error(data.message || (typeof payload === 'string' ? payload : '模型生成失败'))
       } else if (event === 'conversation.message.delta') {
@@ -524,10 +534,6 @@ async function sendMessage(text = draft.value, options = {}) {
         if (!options.regenerate) {
           draft.value = rawContent
           attachments.value = selectedFiles
-          if (knowledgeMentionRequested) {
-            knowledgeMentionSelected.value = true
-            knowledgeEnabled.value = true
-          }
         }
         showNoProviderModal.value = true
         pageError.value = ''
@@ -548,93 +554,9 @@ function resizeComposer() {
   input.style.height = Math.min(input.scrollHeight, 160) + 'px'
 }
 
-function updateMentionMenu() {
-  const input = composerInput.value
-  if (!input || isSending.value) {
-    showMentionMenu.value = false
-    return
-  }
-
-  const caret = input.selectionStart ?? draft.value.length
-  const beforeCaret = draft.value.slice(0, caret)
-  const match = beforeCaret.match(/@([^\\s@]*)$/)
-  if (!match) {
-    showMentionMenu.value = false
-    return
-  }
-
-  const start = caret - match[0].length
-  const previousCharacter = beforeCaret[start - 1] || ''
-  if (previousCharacter && /[A-Za-z0-9._%+-]/.test(previousCharacter)) {
-    showMentionMenu.value = false
-    return
-  }
-
-  const query = match[1]
-  const normalizedQuery = query.toLocaleLowerCase()
-  const matchesKnowledge = !normalizedQuery ||
-    '知识库'.startsWith(normalizedQuery) ||
-    'knowledge'.startsWith(normalizedQuery) ||
-    'kb'.startsWith(normalizedQuery)
-
-  if (!matchesKnowledge) {
-    showMentionMenu.value = false
-    return
-  }
-
-  mentionQuery.value = query
-  mentionStart.value = start
-  mentionEnd.value = caret
-  showMentionMenu.value = true
-}
-
 function handleComposerInput() {
   resizeComposer()
-  updateMentionMenu()
 }
-
-function closeMentionMenu() {
-  showMentionMenu.value = false
-}
-
-function selectKnowledgeMention() {
-  if (isSending.value) return
-  if (!knowledgeBases.value.length) {
-    showMentionMenu.value = false
-    pageError.value = '当前账号暂无可用知识库，请先创建知识库或联系管理员授权。'
-    return
-  }
-
-  const start = mentionStart.value
-  const end = mentionEnd.value
-  if (start < 0 || end < start) {
-    showMentionMenu.value = false
-    return
-  }
-
-  const mentionText = '@知识库 '
-  draft.value = draft.value.slice(0, start) + mentionText + draft.value.slice(end)
-  knowledgeMentionSelected.value = true
-  knowledgeEnabled.value = true
-  showMentionMenu.value = false
-
-  const nextCaret = start + mentionText.length
-  nextTick(() => {
-    const input = composerInput.value
-    if (!input) return
-    input.focus()
-    input.setSelectionRange(nextCaret, nextCaret)
-    resizeComposer()
-  })
-}
-
-watch(draft, (value) => {
-  if (!value.includes('@知识库')) {
-    knowledgeMentionSelected.value = false
-    knowledgeEnabled.value = false
-  }
-  nextTick(resizeComposer)
-}, { flush: 'sync' })
 
 function stopGeneration() {
   if (!activeRequestController || !isSending.value) return
@@ -728,23 +650,6 @@ function removeAttachment(index) {
 }
 
 function handleComposerKeydown(event) {
-  if (showMentionMenu.value) {
-    if (event.key === 'Enter' || event.key === 'Tab') {
-      event.preventDefault()
-      selectKnowledgeMention()
-      return
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeMentionMenu()
-      return
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      return
-    }
-  }
-
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     sendMessage()
@@ -874,6 +779,22 @@ onBeforeUnmount(() => {
               <p>{{ message.reasoning_content }}</p>
             </details>
             <div class="assistant-content" :class="{ 'assistant-content-failed': message.failed }" @click="handleAssistantAction($event, message, index)" v-html="message.pending && !message.content ? '' : renderMarkdown(message.content)"></div>
+            <section v-if="message.knowledge_sources?.length" class="message-knowledge-sources" aria-label="本回答引用的知识文件">
+              <div class="knowledge-sources-heading">
+                <strong>本回答引用资料</strong>
+                <span>{{ message.knowledge_sources.length }} 份文件</span>
+              </div>
+              <article v-for="source in message.knowledge_sources" :key="source.document_id" class="knowledge-source-card">
+                <span class="knowledge-source-file-icon" aria-hidden="true">▤</span>
+                <div class="knowledge-source-main">
+                  <strong :title="source.file_name">{{ source.file_name }}</strong>
+                  <small>{{ source.base_name }} · 知识库来源</small>
+                  <p v-if="source.snippet">{{ source.snippet }}</p>
+                </div>
+                <a v-if="source.file_id" class="knowledge-source-download" :href="knowledgeSourceDownloadURL(source)" download>下载原文件</a>
+                <span v-else class="knowledge-source-unavailable">原文件未归档</span>
+              </article>
+            </section>
             <div v-if="message.content" class="message-actions">
               <button type="button" @click="copyMessage(message.content)">复制全文</button>
               <button type="button" @click="saveAssistantMarkdown(message, index)">保存 Markdown</button>
@@ -887,48 +808,27 @@ onBeforeUnmount(() => {
     </section>
 
     <footer class="chat-footer">
-      <Transition name="mention-suggestion">
-        <div
-          v-if="showMentionMenu"
-          id="mention-suggestion-menu"
-          class="mention-suggestion-menu"
-          role="listbox"
-          aria-label="提及功能"
-        >
-          <div class="mention-suggestion-heading">提及</div>
-          <button
-            class="mention-suggestion-option"
-            type="button"
-            role="option"
-            :aria-selected="true"
-            :disabled="!knowledgeBases.length"
-            @pointerdown.prevent
-            @click="selectKnowledgeMention"
-          >
-            <span class="mention-suggestion-icon"><img src="/zhishiku.png" alt="" aria-hidden="true" /></span>
-            <span class="mention-suggestion-copy">
-              <strong>知识库</strong>
-              <small>{{ knowledgeBases.length ? '引用已授权知识库内容' : '当前没有可用知识库' }}</small>
-            </span>
-            <kbd>{{ knowledgeBases.length ? 'Enter' : '不可用' }}</kbd>
-          </button>
-        </div>
-      </Transition>
-
-      <Transition name="knowledge-context">
-        <div v-if="showKnowledgeContext" class="composer-context-toolbar" aria-label="对话上下文设置">
+      <div class="composer-context-toolbar" aria-label="对话上下文设置">
         <div class="composer-context-main">
-          <label class="knowledge-toggle" :class="{ active: knowledgeEnabled }">
-            <input v-model="knowledgeEnabled" type="checkbox" :disabled="isSending" />
+          <button
+            class="knowledge-toggle"
+            :class="{ active: knowledgeEnabled }"
+            type="button"
+            :aria-pressed="knowledgeEnabled"
+            :disabled="!knowledgeBases.length || isSending"
+            @click="toggleKnowledge"
+          >
             <img class="knowledge-toggle-icon" src="/zhishiku.png" alt="" aria-hidden="true" />
             <span>知识库</span>
-          </label>
+            <span class="knowledge-toggle-state">{{ knowledgeEnabled ? '已开启' : '点击开启' }}</span>
+          </button>
           <select
             v-model="selectedKnowledgeBaseId"
             class="knowledge-base-select"
-            :disabled="!knowledgeEnabled || isSending"
+            :disabled="!knowledgeEnabled || isSending || !knowledgeBases.length"
             aria-label="选择知识库"
           >
+            <option v-if="!knowledgeBases.length" value="">暂无可用知识库</option>
             <option v-for="base in knowledgeBases" :key="base.id" :value="base.id">
               {{ base.name }} · {{ base.owner_username }}
             </option>
@@ -938,11 +838,10 @@ onBeforeUnmount(() => {
           <span v-if="knowledgeEnabled && selectedKnowledgeBase" class="knowledge-document-count">
             {{ Number(selectedKnowledgeBase.document_count || 0) }} 份文档 · {{ selectedKnowledgeBase.name }}
           </span>
-          <span v-else class="knowledge-context-hint">启用后将在回答中检索相关资料</span>
-          <!-- Future voice-input controls belong in this upper context toolbar. -->
+          <span v-else-if="knowledgeEnabled" class="knowledge-context-hint">请选择要检索的知识库</span>
+          <span v-else class="knowledge-context-hint">开启后将在回答中检索相关资料</span>
         </div>
-        </div>
-      </Transition>
+      </div>
 
       <div class="composer-shell" :class="{ 'composer-compact': !composerExpanded, 'composer-expanded': composerExpanded }">
         <div v-if="editingMessageId" class="editing-message-bar">
@@ -993,13 +892,9 @@ onBeforeUnmount(() => {
             :placeholder="attachments.length ? '询问附件内容…' : '发送消息开始提问…'"
             :disabled="isSending"
             :aria-label="copy.sendPlaceholder"
-            :aria-expanded="showMentionMenu"
-            aria-controls="mention-suggestion-menu"
             @keydown="handleComposerKeydown"
             @input="handleComposerInput"
             @paste="handleComposerPaste"
-            @click="updateMentionMenu"
-            @blur="closeMentionMenu"
           ></textarea>
 
           <div v-if="models.length" class="footer-toolbar composer-model-toolbar">

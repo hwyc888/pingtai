@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"pingtai/internal/database"
+	"pingtai/internal/model"
 	"pingtai/internal/repository"
 )
 
@@ -79,10 +80,15 @@ func TestStreamModelChatPersistsAndStreamsCompletedAnswer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(upstream))}
 
-	handler.streamModelChat(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", 1, nil)
+	sources := []model.MessageKnowledgeSource{{
+		FileID: "file-stream", DocumentID: "doc-stream", BaseID: "base-stream",
+		BaseName: "学校规章", FileName: "教学制度.pdf", Snippet: "教学制度来源片段",
+	}}
+	handler.streamModelChatWithSources(recorder, request, streamResponseClient{response: response}, "chat-stream", "conversation-stream", 1, nil, sources)
 
-	if !strings.Contains(recorder.Body.String(), "event: delta") || !strings.Contains(recorder.Body.String(), "event: done") {
-		t.Fatalf("expected SSE deltas and completion event, got %s", recorder.Body.String())
+	if !strings.Contains(recorder.Body.String(), "event: delta") || !strings.Contains(recorder.Body.String(), "event: done") ||
+		!strings.Contains(recorder.Body.String(), "file-stream") {
+		t.Fatalf("expected SSE deltas, completion and knowledge source metadata, got %s", recorder.Body.String())
 	}
 	chat, err := repo.FindChat(context.Background(), "chat-stream", "conversation-stream", "alice")
 	if err != nil {
@@ -95,8 +101,9 @@ func TestStreamModelChatPersistsAndStreamsCompletedAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(messages) != 2 || messages[1].Content != "hello world" {
-		t.Fatalf("unexpected persisted messages: %#v", messages)
+	if len(messages) != 2 || messages[1].Content != "hello world" ||
+		len(messages[1].KnowledgeSources) != 1 || messages[1].KnowledgeSources[0].FileID != "file-stream" {
+		t.Fatalf("unexpected persisted messages or knowledge sources: %#v", messages)
 	}
 }
 

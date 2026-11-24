@@ -187,12 +187,14 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	systemPrompt := activeConfig.SystemPrompt()
+	knowledgeSources := make([]model.MessageKnowledgeSource, 0)
 	if knowledgeBaseID := strings.TrimSpace(r.FormValue("knowledge_base_id")); knowledgeBaseID != "" {
-		knowledgeContext, knowledgeErr := h.knowledgePrompt(r.Context(), identity, knowledgeBaseID, content)
+		knowledgeContext, sources, knowledgeErr := h.knowledgePromptWithSources(r.Context(), identity, knowledgeBaseID, content)
 		if knowledgeErr != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"code": http.StatusBadRequest, "msg": knowledgeErr.Error()})
 			return
 		}
+		knowledgeSources = sources
 		systemPrompt = strings.TrimSpace(systemPrompt + "\n\n" + knowledgeContext)
 	}
 	budget, err := contextbudget.Fit(
@@ -279,7 +281,7 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "序列化流式请求失败")
 			return
 		}
-		h.streamModelChat(w, r, openai.NewClient(activeConfig), chatID, conversationID, userMessage.ID, body)
+		h.streamModelChatWithSources(w, r, openai.NewClient(activeConfig), chatID, conversationID, userMessage.ID, body, knowledgeSources)
 		return
 	}
 
@@ -304,9 +306,15 @@ func (h *Handler) chatModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"code": 0, "msg": "success", "data": map[string]any{"id": chatID}})
 		return
 	}
-	if _, err := h.Chats.InsertMessage(r.Context(), conversationID, chatID, "assistant", answer, reasoning); err != nil {
+	assistantMessage, err := h.Chats.InsertMessage(r.Context(), conversationID, chatID, "assistant", answer, reasoning)
+	if err != nil {
 		_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", err.Error())
 		writeError(w, http.StatusInternalServerError, "保存模型回复失败")
+		return
+	}
+	if err := h.Chats.SaveMessageKnowledgeSources(r.Context(), assistantMessage.ID, knowledgeSources); err != nil {
+		_ = h.Chats.UpdateChat(r.Context(), chatID, "failed", err.Error())
+		writeError(w, http.StatusInternalServerError, "保存知识库来源失败")
 		return
 	}
 	if err := h.Chats.UpdateChat(r.Context(), chatID, "completed", ""); err != nil {
@@ -437,6 +445,6 @@ func formatMessage(item model.Message) map[string]any {
 	return map[string]any{
 		"id": item.ID, "role": item.Role, "content": item.Content,
 		"reasoning_content": item.ReasoningContent, "created_at": item.CreatedAt,
-		"attachments": item.Attachments,
+		"attachments": item.Attachments, "knowledge_sources": item.KnowledgeSources,
 	}
 }

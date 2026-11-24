@@ -99,15 +99,34 @@ func (r *ChatRepository) SaveMessageAttachments(ctx context.Context, messageID i
 	return err
 }
 
+func (r *ChatRepository) SaveMessageKnowledgeSources(ctx context.Context, messageID int64, sources []model.MessageKnowledgeSource) error {
+	if len(sources) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(sources)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx,
+		"INSERT INTO ai_message_knowledge_source (message_id,sources_json) VALUES (?,?) "+
+			"ON CONFLICT(message_id) DO UPDATE SET sources_json=excluded.sources_json",
+		messageID, string(encoded),
+	)
+	return err
+}
+
 func scanMessageWithAttachments(row interface{ Scan(...any) error }) (model.Message, error) {
 	var item model.Message
-	var encoded string
+	var encodedAttachments, encodedSources string
 	err := row.Scan(&item.ID, &item.ConversationID, &item.ChatID, &item.Role, &item.Content,
-		&item.ReasoningContent, &item.CreatedAt, &encoded)
+		&item.ReasoningContent, &item.CreatedAt, &encodedAttachments, &encodedSources)
 	if err != nil {
 		return model.Message{}, err
 	}
-	if err := json.Unmarshal([]byte(encoded), &item.Attachments); err != nil {
+	if err := json.Unmarshal([]byte(encodedAttachments), &item.Attachments); err != nil {
+		return model.Message{}, err
+	}
+	if err := json.Unmarshal([]byte(encodedSources), &item.KnowledgeSources); err != nil {
 		return model.Message{}, err
 	}
 	return item, nil
@@ -188,7 +207,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, conversationID string
 	if order == "asc" {
 		direction = "ASC"
 	}
-	query := "SELECT id,conversation_id,chat_id,role,content,COALESCE(reasoning_content,''),created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=id),'[]') " +
+	query := "SELECT id,conversation_id,chat_id,role,content,COALESCE(reasoning_content,''),created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=id),'[]'),COALESCE((SELECT s.sources_json FROM ai_message_knowledge_source s WHERE s.message_id=id),'[]') " +
 		"FROM ai_message WHERE conversation_id=? ORDER BY id " + direction + " LIMIT ?"
 	rows, err := r.db.QueryContext(ctx, query, conversationID, limit)
 	if err != nil {
@@ -208,7 +227,7 @@ func (r *ChatRepository) ListMessages(ctx context.Context, conversationID string
 }
 
 func (r *ChatRepository) MessagesByChat(ctx context.Context, chatID, conversationID, userID string) ([]model.Message, error) {
-	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]') " +
+	query := "SELECT m.id,m.conversation_id,m.chat_id,m.role,m.content,COALESCE(m.reasoning_content,''),m.created_at,COALESCE((SELECT a.attachments_json FROM ai_message_attachment a WHERE a.message_id=m.id),'[]'),COALESCE((SELECT s.sources_json FROM ai_message_knowledge_source s WHERE s.message_id=m.id),'[]') " +
 		"FROM ai_message m INNER JOIN ai_conversation v ON v.id=m.conversation_id " +
 		"WHERE m.chat_id=? AND m.conversation_id=? AND v.user_id=? ORDER BY m.id ASC"
 	rows, err := r.db.QueryContext(ctx, query, chatID, conversationID, userID)
